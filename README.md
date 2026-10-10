@@ -53,10 +53,10 @@ Time-specific: "What time is my 1:1 with Bharath?"
 ## Download & Install
 
 **Latest APK (v1.3.5)**  
-📥 https://utilsnow.com/jarvis/app.apk
+📥 Get the APK from your administrator
 
 **Installation Steps**:
-1. Download APK
+1. Receive APK from administrator via Teams
 2. Uninstall previous version (if any)
 3. Install the new APK
 4. Grant permissions (microphone required)
@@ -67,8 +67,8 @@ Time-specific: "What time is my 1:1 with Bharath?"
 ## Quick Test
 
 ```bash
-# Test backend health
-curl https://utilsnow.com/jarvis/health
+# Test backend health (when deployed)
+curl http://localhost:8001/health
 
 # Should return:
 # {"status":"ok","llm_provider":"groq","llm_model":"openai/gpt-oss-120b","llm_configured":true}
@@ -86,16 +86,16 @@ curl https://utilsnow.com/jarvis/health
 │  └─ Sherpa-ONNX KWS (on-device, offline, Apache 2.0)       │
 │                                                              │
 │  STT: Google Speech Recognition (on-device, real-time)      │
-│  WebSocket → wss://utilsnow.com/jarvis/ws                   │
+│  WebSocket → backend server (configured at runtime)          │
 │                                                              │
 │  TTS: expo-speech (natural voice, 0.92 rate)                │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ VPS (200.141.2.221) — Contabo Ubuntu 22.04                  │
+│ Backend Server (Linux, Docker)                              │
 │                                                              │
-│  nginx reverse proxy (port 443 → 127.0.0.1:8001)            │
+│  nginx reverse proxy                                         │
 │  │                                                          │
 │  ▼                                                          │
 │  FastAPI Backend (Docker)                                   │
@@ -126,14 +126,7 @@ curl https://utilsnow.com/jarvis/health
 
 ## Deployment
 
-### Option 1: Download Latest APK (Easiest)
-
-```
-No deployment needed — app connects to live backend at utilsnow.com
-Download: https://utilsnow.com/jarvis/app.apk
-```
-
-### Option 2: Deploy Your Own Backend
+### Option 1: Deploy Your Own Backend (Recommended)
 
 ```bash
 # Prerequisites
@@ -150,11 +143,11 @@ docker compose up -d --build
 # Verify
 curl http://localhost:8001/health
 
-# Share with team
-# APK available at: http://<your-server-ip>:8001/app.apk
+# Share APK with team
+# APK will be available at: http://<your-server-ip>:8001/app.apk
 ```
 
-### Option 3: Docker Only (no git)
+### Option 2: Docker Only (no git)
 
 ```bash
 docker run -d \
@@ -239,7 +232,7 @@ DEBUG=false
 |--------|-------|
 | **Query Intents** | 8/8 passing |
 | **Response Time** | 1.0–4.8s (typical) |
-| **Uptime** | 99.9% (WebSocket to utilsnow.com) |
+| **Uptime** | 99.9% when backend is deployed |
 | **LLM** | Groq 1000 RPM, no daily limit |
 | **Fallback** | Keyword heuristic (always works) |
 | **Message History** | 20 messages persisted locally |
@@ -284,10 +277,10 @@ DEBUG=false
 
 ### "Connection lost. Reconnecting"
 ```bash
-# Check backend health
-curl https://utilsnow.com/jarvis/health
+# Check backend is running
+curl http://localhost:8001/health
 
-# If running locally, check Docker
+# If running locally, check Docker logs
 docker compose logs backend
 ```
 
@@ -354,14 +347,12 @@ Your team can now:
 
 ## Links
 
-| Resource | URL |
-|----------|-----|
-| **APK Download** | https://utilsnow.com/jarvis/app.apk |
-| **Live WebSocket** | wss://utilsnow.com/jarvis/ws |
-| **Health Check** | https://utilsnow.com/jarvis/health |
-| **Query Guide** | [QUERY_GUIDE.md](QUERY_GUIDE.md) |
+| Resource | Details |
+|----------|---------|
+| **Query Examples** | [QUERY_GUIDE.md](QUERY_GUIDE.md) |
 | **Architecture** | [AGENTS.md](AGENTS.md) |
 | **GitHub** | https://github.com/Venkatabharath1969/jarvis |
+| **APK** | Get from your administrator via Teams |
 
 ---
 
