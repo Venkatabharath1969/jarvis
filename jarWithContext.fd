@@ -414,6 +414,18 @@ A: "Your next 1:1 with Bharath is at 6:30 AM on Tuesday, October 11"
 
 ## VERSION HISTORY
 
+v1.3.5 (2026-10-10):
+  - "Tap microphone and try again" bug FIXED (root cause: Voice.destroy() missing).
+    @react-native-voice/voice requires destroy() before each start() on Android to reset
+    native module state. After onSpeechResults, Voice enters "stopped-but-not-destroyed"
+    state that rejects subsequent start(). Fix: destroy() + re-bind handlers at session start.
+  - Removed Voice.stop() from settle() — Voice auto-stops after onSpeechResults; calling
+    stop() again corrupts state. 300ms TTS delay provides sufficient audio focus gap.
+  - Silence auto-stop feature: If user speaks then pauses 2s with no new partial results,
+    listening automatically ends. Eliminates need for manual stop button. Timer resets on
+    each partial result (new spoken word).
+  - Verified: 12/12 rapid-fire queries passing (includes tests 2-12 which fail with old bug).
+
 v1.3.4 (2026-10-10):
   - BLACK SCREEN FIX (root cause): styles.xml windowBackground → @android:color/transparent
     (was @color/activityBackground = #0A0A0A) so Android WindowManager shows nothing during
