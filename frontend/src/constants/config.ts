@@ -1,7 +1,6 @@
-// VPS direct access — no domain name required
-// Colleagues can connect to this URL without knowing the personal website
-export const DEFAULT_WS_URL = 'ws://200.141.2.221:8765/ws';
-export const DEFAULT_HEALTH_URL = 'http://200.141.2.221:8765/health';
+// utilsnow.com — HTTPS/WSS on port 443, works through corporate proxies
+export const DEFAULT_WS_URL = 'wss://utilsnow.com/jarvis/ws';
+export const DEFAULT_HEALTH_URL = 'https://utilsnow.com/jarvis/health';
 export const WS_RECONNECT_DELAY = 3000;
 export const WS_HEARTBEAT = 30000;
 export const STORAGE_KEYS = {
