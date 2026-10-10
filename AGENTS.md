@@ -89,7 +89,7 @@ jarvis/
 
 | Decision | Choice | Why |
 |---|---|---|
-| LLM | Gemini 2.5 Flash | Cost-effective, fast, 1M context |
+| LLM | Groq `openai/gpt-oss-120b` (Gemini fallback) | 1000 RPM, no daily limit; Gemini had 20 RPD free cap |
 | STT | Android Google Voice Recognition | No cloud cost, accurate |
 | Wake word | Sherpa-ONNX (ONNX model in APK) | Fully offline |
 | DB | PostgreSQL 16 + pgvector | Structured + semantic search |
