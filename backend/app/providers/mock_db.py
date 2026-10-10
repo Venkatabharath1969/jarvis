@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from asyncpg import Pool
@@ -46,8 +47,9 @@ class MockDBProvider(CalendarProvider):
             LEFT JOIN meeting_attendees ma ON ma.meeting_id = m.id
             LEFT JOIN people p            ON p.id = ma.person_id
             WHERE m.meeting_date >= NOW() - ($1 || ' days')::interval
+              AND m.meeting_date <= NOW() + INTERVAL '30 days'
             GROUP BY m.id
-            ORDER BY m.meeting_date DESC
+            ORDER BY m.meeting_date ASC
         """
         try:
             async with self._pool.acquire() as conn:
@@ -152,3 +154,39 @@ class MockDBProvider(CalendarProvider):
             except Exception:
                 logger.exception("semantic_search fallback also failed")
                 return []
+
+    async def check_availability(
+        self, start: datetime, end: datetime
+    ) -> dict:
+        """Query meetings table for any overlap in the given window."""
+        sql = """
+            SELECT m.title, m.meeting_date, m.duration_minutes
+            FROM meetings m
+            WHERE m.meeting_date < $2
+              AND (m.meeting_date + (m.duration_minutes || ' minutes')::interval) > $1
+            ORDER BY m.meeting_date
+        """
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(sql, start, end)
+            conflicts = [
+                {
+                    "title": r["title"],
+                    "start": str(r["meeting_date"]),
+                    "end": str(r["meeting_date"].replace(
+                        minute=r["meeting_date"].minute + r["duration_minutes"]
+                    ) if hasattr(r["meeting_date"], "replace") else ""),
+                    "show_as": "busy",
+                }
+                for r in rows
+            ]
+            return {"free": len(conflicts) == 0, "conflicts": conflicts}
+        except Exception:
+            logger.exception("check_availability failed")
+            return {"free": True, "conflicts": []}
+
+    async def get_inbox_messages(
+        self, limit: int = 10, unread_only: bool = False
+    ) -> list[dict]:
+        return []
+

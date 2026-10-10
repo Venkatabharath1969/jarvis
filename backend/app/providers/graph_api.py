@@ -58,13 +58,18 @@ class GraphAPIProvider(CalendarProvider):
             "Content-Type": "application/json",
         }
 
+    async def _headers_async(self) -> dict[str, str]:
+        """Non-blocking version: wraps MSAL sync call in a thread pool."""
+        token = await asyncio.to_thread(self._acquire_token)
+        return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
     # ------------------------------------------------------------------ #
     # HTTP helper with retry on 429
     # ------------------------------------------------------------------ #
 
     async def _get(self, url: str, params: dict[str, str] | None = None) -> Any:
         async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(url, headers=self._headers(), params=params)
+            response = await client.get(url, headers=await self._headers_async(), params=params)
 
             if response.status_code == 401:
                 logger.error("Graph API returned 401 Unauthorized for %s", url)
@@ -81,7 +86,7 @@ class GraphAPIProvider(CalendarProvider):
                 logger.warning("Graph API rate-limited; retrying after %ds", retry_after)
                 import asyncio
                 await asyncio.sleep(retry_after)
-                response = await client.get(url, headers=self._headers(), params=params)
+                response = await client.get(url, headers=await self._headers_async(), params=params)
 
             response.raise_for_status()
             return response.json()
@@ -205,7 +210,7 @@ class GraphAPIProvider(CalendarProvider):
             ]
         }
         async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(url, headers=self._headers(), json=body)
+            response = await client.post(url, headers=await self._headers_async(), json=body)
             if response.status_code in (401, 403, 429):
                 logger.warning("Graph search returned %d", response.status_code)
                 return []
@@ -228,3 +233,57 @@ class GraphAPIProvider(CalendarProvider):
                         }
                     )
         return results
+
+    async def check_availability(
+        self, start: datetime, end: datetime
+    ) -> dict:
+        """Check CEO calendar for conflicts in [start, end]."""
+        url = f"{GRAPH_BASE}/users/{self._user_upn}/calendarView"
+        params = {
+            "startDateTime": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "endDateTime":   end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "$select":       "id,subject,start,end,showAs,isCancelled",
+            "$top":          "20",
+        }
+        data = await self._get(url, params)
+        if data is None:
+            return {"free": False, "conflicts": [], "error": "auth_failure"}
+        conflicts = [
+            {
+                "title":    e.get("subject", "(No subject)"),
+                "start":    e.get("start", {}).get("dateTime"),
+                "end":      e.get("end", {}).get("dateTime"),
+                "show_as":  e.get("showAs", "busy"),
+            }
+            for e in data.get("value", [])
+            if not e.get("isCancelled") and e.get("showAs", "busy") != "free"
+        ]
+        return {"free": len(conflicts) == 0, "conflicts": conflicts}
+
+    async def get_inbox_messages(
+        self, limit: int = 10, unread_only: bool = False
+    ) -> list[dict]:
+        """Return recent inbox messages."""
+        url = f"{GRAPH_BASE}/users/{self._user_upn}/mailFolders/inbox/messages"
+        params: dict[str, str] = {
+            "$top":      str(limit),
+            "$select":   "id,subject,from,receivedDateTime,bodyPreview,isRead",
+            "$orderby":  "receivedDateTime desc",
+        }
+        if unread_only:
+            params["$filter"] = "isRead eq false"
+        data = await self._get(url, params)
+        if data is None:
+            return []
+        return [
+            {
+                "id":        m.get("id"),
+                "subject":   m.get("subject", "(No subject)"),
+                "from_name": m.get("from", {}).get("emailAddress", {}).get("name", ""),
+                "received":  m.get("receivedDateTime"),
+                "preview":   m.get("bodyPreview", "")[:200],
+                "is_read":   m.get("isRead", True),
+            }
+            for m in data.get("value", [])
+        ]
+

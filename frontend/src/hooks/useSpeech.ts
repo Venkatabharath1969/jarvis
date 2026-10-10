@@ -1,3 +1,13 @@
+/**
+ * useSpeech — voice input/output hook.
+ *
+ * API change (v1.2.1): startListening now accepts a callback instead of returning
+ * a Promise. This eliminates the stale-promise / manual-stop hang that caused the
+ * blank-screen bug: when the user taps mic to STOP, stopListening() fires the
+ * callback immediately with whatever partial transcript exists, rather than leaving
+ * an orphaned Promise that never resolves.
+ */
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import * as Speech from 'expo-speech';
 import { Platform, PermissionsAndroid } from 'react-native';
@@ -9,18 +19,18 @@ try {
   // fallback to demo mode if native module not linked
 }
 
-// Fallback demo cycle — used only if native STT is unavailable
+// Demo cycle — used only when native STT is unavailable
 const DEMO_QUERIES = [
   'What are my overdue action items?',
-  'What meetings did I have this week?',
+  'What meetings do I have this week?',
   'Summarise the Q4 budget review.',
   'Who is Klaus Weber and what did he commit to?',
   'What is the latest on Project Delta?',
 ];
 
-interface UseSpeechReturn {
-  startListening: () => Promise<string | null>;
-  stopListening: () => Promise<void>;
+export interface UseSpeechReturn {
+  startListening: (onResult: (transcript: string | null) => void) => void;
+  stopListening: () => void;
   speak: (text: string) => void;
   stopSpeaking: () => void;
   isSpeaking: boolean;
@@ -30,41 +40,45 @@ interface UseSpeechReturn {
 export function useSpeech(): UseSpeechReturn {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const demoIndexRef = useRef(0);
-  const resolveRef = useRef<((t: string) => void) | null>(null);
+
+  const onResultRef = useRef<((t: string | null) => void) | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partialRef = useRef<string>('');
+  const demoIndexRef = useRef(0);
 
-  // Wire up Voice events once on mount
+  // ── single-fire result emitter ────────────────────────────────────────────
+  const fireResult = useCallback((transcript: string | null) => {
+    if (!onResultRef.current) return; // already fired or not started
+    const cb = onResultRef.current;
+    onResultRef.current = null;
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    setIsListening(false);
+    cb(transcript);
+  }, []);
+
+  // ── Voice event wiring ────────────────────────────────────────────────────
   useEffect(() => {
     if (!Voice) return;
 
     Voice.onSpeechPartialResults = (e: any) => {
-      const partial = e.value?.[0] ?? '';
-      partialRef.current = partial;
+      partialRef.current = e.value?.[0] ?? '';
     };
 
     Voice.onSpeechResults = (e: any) => {
       const transcript = e.value?.[0] ?? partialRef.current;
-      if (transcript && resolveRef.current) {
-        if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
-        const cb = resolveRef.current;
-        resolveRef.current = null;
-        setIsListening(false);
-        cb(transcript);
-      }
+      if (transcript) fireResult(transcript);
     };
 
-    Voice.onSpeechError = (_e: any) => {
-      // On error fall through to the timeout which returns a demo query
-      // so the UX never hangs
+    Voice.onSpeechError = () => {
+      // Let the 10s timeout handle it — never hang the UI
     };
 
     return () => {
       Voice.destroy().catch(() => {});
     };
-  }, []);
+  }, [fireResult]);
 
+  // ── Permission ────────────────────────────────────────────────────────────
   const requestMicPermission = useCallback(async (): Promise<boolean> => {
     if (Platform.OS !== 'android') return true;
     const granted = await PermissionsAndroid.request(
@@ -78,60 +92,68 @@ export function useSpeech(): UseSpeechReturn {
     return granted === PermissionsAndroid.RESULTS.GRANTED;
   }, []);
 
-  const stopListening = useCallback(async (): Promise<void> => {
-    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
-    try { if (Voice) await Voice.stop(); } catch { /* ignore */ }
-    setIsListening(false);
-  }, []);
+  // ── startListening ────────────────────────────────────────────────────────
+  const startListening = useCallback(async (onResult: (t: string | null) => void) => {
+    // Cancel any in-progress session
+    if (onResultRef.current) {
+      onResultRef.current = null;
+      if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+      try { if (Voice) await Voice.stop(); } catch { /* ignore */ }
+    }
 
-  const startListening = useCallback(async (): Promise<string | null> => {
     const hasPermission = await requestMicPermission();
-    if (!hasPermission) return null;
+    if (!hasPermission) {
+      onResult(null);
+      return;
+    }
 
-    setIsListening(true);
     partialRef.current = '';
+    onResultRef.current = onResult;
+    setIsListening(true);
 
-    return new Promise<string | null>((resolve) => {
-      resolveRef.current = (t: string) => resolve(t);
-
-      // 10-second hard timeout — always resolves so UI never hangs
-      timeoutRef.current = setTimeout(async () => {
-        resolveRef.current = null;
-        try { if (Voice) await Voice.stop(); } catch { /* ignore */ }
-        setIsListening(false);
-
-        // If we got a partial result during recording, use it
-        if (partialRef.current) {
-          resolve(partialRef.current);
-          return;
-        }
-
-        // No Voice module or nothing heard — use demo cycling
-        if (!Voice) {
-          const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
-          demoIndexRef.current += 1;
-          resolve(q);
-        } else {
-          // Real STT but nothing heard — resolve null so UI shows idle
-          resolve(null);
-        }
-      }, 10000);
-
-      if (Voice) {
-        Voice.start('en-US').catch(() => {
-          // Start failed — fall to demo
-          if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
-          resolveRef.current = null;
-          const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
-          demoIndexRef.current += 1;
-          setIsListening(false);
-          resolve(q);
-        });
+    // 10-second hard timeout — always fires so UI never hangs
+    timeoutRef.current = setTimeout(() => {
+      if (!Voice) {
+        // Demo mode: cycle through sample queries
+        const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
+        demoIndexRef.current += 1;
+        fireResult(q);
+      } else {
+        // Nothing recognised — fire with partial or null
+        Voice.stop().catch(() => {});
+        fireResult(partialRef.current || null);
       }
-    });
-  }, [requestMicPermission]);
+    }, 10000);
 
+    if (Voice) {
+      Voice.start('en-US').catch(() => {
+        // STT failed to start — fall back to demo
+        const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
+        demoIndexRef.current += 1;
+        fireResult(q);
+      });
+    }
+    // If no Voice module, wait for the 10s timeout to fire demo query
+  }, [fireResult, requestMicPermission]);
+
+  // ── stopListening — IMMEDIATELY fires the callback ────────────────────────
+  const stopListening = useCallback(() => {
+    if (!onResultRef.current) return; // nothing in progress
+
+    // Capture partial before clearing
+    const partial = partialRef.current;
+
+    // Stop Voice (may trigger onSpeechResults which calls fireResult again —
+    // that's fine: fireResult is single-fire, second call is a no-op)
+    try { if (Voice) Voice.stop().catch(() => {}); } catch { /* ignore */ }
+
+    // Fire immediately with whatever we have so UI never hangs
+    fireResult(partial || null);
+  }, [fireResult]);
+
+  // ── TTS ───────────────────────────────────────────────────────────────────
   const speak = useCallback((text: string) => {
+    if (!text.trim()) return;
     Speech.stop();
     setIsSpeaking(true);
     Speech.speak(text, {

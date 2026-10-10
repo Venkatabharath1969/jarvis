@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any
 
 
@@ -28,3 +29,18 @@ class CalendarProvider(ABC):
     ) -> list[dict[str, Any]]:
         """Semantic search over meeting transcripts / notes."""
         ...
+
+    @abstractmethod
+    async def check_availability(
+        self, start: datetime, end: datetime
+    ) -> dict:
+        """Check free/busy for a window. Returns {free:bool, conflicts:list}."""
+        ...
+
+    @abstractmethod
+    async def get_inbox_messages(
+        self, limit: int = 10, unread_only: bool = False
+    ) -> list[dict]:
+        """Return recent inbox messages."""
+        ...
+

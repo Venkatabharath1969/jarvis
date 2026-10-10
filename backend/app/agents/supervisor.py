@@ -18,6 +18,7 @@ Flow:
 """
 
 import json
+from datetime import datetime, timezone
 import logging
 from typing import Annotated, Any, Literal
 
@@ -28,6 +29,7 @@ from typing_extensions import TypedDict
 
 from app.config import get_settings
 from app.providers import get_provider
+from app.agents.graph_tools import availability_agent, email_agent
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,8 @@ IntentType = Literal[
     "action_items",
     "memory_search",
     "schedule_meeting",
+    "availability_query",
+    "email_query",
     "general",
 ]
 
@@ -93,6 +97,10 @@ async def classify_intent(state: JarvisState) -> dict[str, Any]:
             intent = "memory_search"
         elif any(w in q_lower for w in ("book", "create meeting", "set up meeting")):
             intent = "schedule_meeting"
+        elif any(w in q_lower for w in ("free", "available", "availability", "busy", "slot", "open slot")):
+            intent = "availability_query"
+        elif any(w in q_lower for w in ("email", "inbox", "mail", "message", "unread")):
+            intent = "email_query"
         else:
             intent = "general"
         logger.info("classify_intent (heuristic): %s", intent)
@@ -102,11 +110,13 @@ async def classify_intent(state: JarvisState) -> dict[str, Any]:
         content=(
             "You are an intent classifier for JARVIS, an AI executive assistant. "
             "Classify the user query into exactly one of these categories:\n"
-            "  calendar_query   - questions about past or upcoming meetings\n"
-            "  action_items     - questions about tasks, to-dos, follow-ups\n"
-            "  memory_search    - searching meeting transcripts or notes\n"
-            "  schedule_meeting - requests to book or create a new meeting\n"
-            "  general          - anything else\n\n"
+            "  calendar_query     - questions about past or upcoming meetings\n"
+            "  action_items       - questions about tasks, to-dos, follow-ups\n"
+            "  memory_search      - searching meeting transcripts or notes\n"
+            "  schedule_meeting   - requests to book or create a new meeting\n"
+            "  availability_query - checking free/busy status or calendar availability\n"
+            "  email_query        - reading inbox, emails, or messages\n"
+            "  general            - anything else\n\n"
             "Respond with ONLY the category name, nothing else."
         )
     )
@@ -117,7 +127,7 @@ async def classify_intent(state: JarvisState) -> dict[str, Any]:
         raw = response.content.strip().lower()
         valid: set[str] = {
             "calendar_query", "action_items", "memory_search",
-            "schedule_meeting", "general",
+            "schedule_meeting", "availability_query", "email_query", "general",
         }
         intent = raw if raw in valid else "general"
     except Exception:
@@ -132,7 +142,7 @@ async def calendar_agent(state: JarvisState) -> dict[str, Any]:
     """Fetch recent meetings and format them as readable text."""
     try:
         provider = get_provider()
-        meetings = await provider.get_recent_meetings(days=14)
+        meetings = await provider.get_recent_meetings(days=7)
     except Exception:
         logger.exception("calendar_agent: provider call failed")
         return {"agent_result": "I was unable to retrieve your calendar at this time."}
@@ -140,7 +150,9 @@ async def calendar_agent(state: JarvisState) -> dict[str, Any]:
     if not meetings:
         return {"agent_result": "No meetings found in the past 14 days."}
 
-    lines = ["Here are your recent meetings:"]
+    now_utc = datetime.now(timezone.utc)
+    today_str = now_utc.strftime("%A, %d %B %Y")
+    lines = [f"Meetings relative to today ({today_str}):"]
     for m in meetings[:10]:  # cap at 10 for voice response
         date_str = str(m.get("meeting_date", ""))[:16]
         title = m.get("title", "(Untitled)")
@@ -263,9 +275,13 @@ async def compose_response(state: JarvisState) -> dict[str, Any]:
         # Return agent_result verbatim if LLM is unavailable
         return {"final_response": agent_result}
 
+    now_utc = datetime.now(timezone.utc)
+    now_str = now_utc.strftime("%A, %d %B %Y, %H:%M UTC")
     system = SystemMessage(
         content=(
             "You are JARVIS, an AI voice assistant for a Mercedes-Benz CEO. "
+            f"Current date and time: {now_str}. "
+            "Use this to correctly interpret 'today', 'tomorrow', 'this week'. "
             "Convert the following data or answer into a natural, spoken English response. "
             "Be concise — 1 to 3 sentences. "
             "Do not use bullet points, markdown, or lists. "
@@ -302,6 +318,8 @@ def route_intent(state: JarvisState) -> str:
         "action_items": "action_items_agent",
         "memory_search": "memory_agent",
         "schedule_meeting": "general_agent",
+        "availability_query": "availability_agent",
+        "email_query": "email_agent",
         "general": "general_agent",
     }
     return routing.get(intent, "general_agent")
@@ -322,6 +340,8 @@ def build_graph() -> Any:
     builder.add_node("action_items_agent", action_items_agent)
     builder.add_node("memory_agent", memory_agent)
     builder.add_node("general_agent", general_agent)
+    builder.add_node("availability_agent", availability_agent)
+    builder.add_node("email_agent", email_agent)
     builder.add_node("compose_response", compose_response)
 
     # Entry point
@@ -336,6 +356,8 @@ def build_graph() -> Any:
             "action_items_agent": "action_items_agent",
             "memory_agent": "memory_agent",
             "general_agent": "general_agent",
+            "availability_agent": "availability_agent",
+            "email_agent": "email_agent",
         },
     )
 
@@ -345,6 +367,8 @@ def build_graph() -> Any:
         "action_items_agent",
         "memory_agent",
         "general_agent",
+        "availability_agent",
+        "email_agent",
     ):
         builder.add_edge(agent_node, "compose_response")
 
