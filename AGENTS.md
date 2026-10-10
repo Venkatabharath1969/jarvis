@@ -162,8 +162,10 @@ HNSW index on `meeting_chunks.embedding` for fast semantic search.
 | `POSTGRES_DB` | Yes | `jarvis` | DB name |
 | `POSTGRES_HOST` | Yes | `db` | DB host (Docker service name) |
 | `POSTGRES_PORT` | No | `5432` | DB port |
-| `GOOGLE_API_KEY` | Yes | — | Gemini API key (aistudio.google.com) |
-| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model ID |
+| `GROQ_API_KEY` | Yes (preferred) | — | Groq API key (console.groq.com) — 1000 RPM, no daily limit |
+| `GROQ_MODEL` | No | `openai/gpt-oss-120b` | Groq model ID |
+| `GOOGLE_API_KEY` | Fallback | — | Gemini API key — only used when GROQ_API_KEY is blank |
+| `GEMINI_MODEL` | No | `gemini-3.5-flash` | Gemini model ID |
 | `USE_MOCK_DATA` | No | `true` | `true` = PostgreSQL, `false` = Graph API |
 | `GRAPH_TENANT_ID` | Graph only | — | Azure AD tenant ID |
 | `GRAPH_CLIENT_ID` | Graph only | — | Azure App client ID |

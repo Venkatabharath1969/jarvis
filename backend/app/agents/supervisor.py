@@ -23,7 +23,6 @@ import logging
 from typing import Annotated, Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
 
@@ -64,18 +63,36 @@ class JarvisState(TypedDict):
 # --------------------------------------------------------------------------- #
 
 
-def _make_llm() -> ChatGoogleGenerativeAI | None:
+def _make_llm() -> Any | None:
+    """
+    LLM factory — Groq first (fast, no daily quota), Gemini as fallback.
+    Returns None when neither key is configured (heuristic-only mode).
+    """
     settings = get_settings()
-    if not settings.GOOGLE_API_KEY:
-        logger.warning("GOOGLE_API_KEY is not set; LLM calls will return placeholder responses.")
-        return None
-    return ChatGoogleGenerativeAI(
-        model=settings.GEMINI_MODEL,
-        google_api_key=settings.GOOGLE_API_KEY,
-        temperature=0.1,
-        max_retries=0,          # fail fast on 429 — don't retry for hours
-        request_timeout=12,     # hard timeout per call
-    )
+
+    if settings.GROQ_API_KEY:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=settings.GROQ_MODEL,
+            openai_api_key=settings.GROQ_API_KEY,
+            openai_api_base="https://api.groq.com/openai/v1",
+            temperature=0.1,
+            max_retries=1,
+            request_timeout=15,
+        )
+
+    if settings.GOOGLE_API_KEY:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model=settings.GEMINI_MODEL,
+            google_api_key=settings.GOOGLE_API_KEY,
+            temperature=0.1,
+            max_retries=0,
+            request_timeout=12,
+        )
+
+    logger.warning("No LLM API key configured — running in heuristic-only mode.")
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -256,7 +273,7 @@ async def general_agent(state: JarvisState) -> dict[str, Any]:
         return {
             "agent_result": (
                 "I'm sorry, I cannot process your request right now because "
-                "the AI service is not configured. Please set the GOOGLE_API_KEY."
+                "the AI service is not configured. Please set GROQ_API_KEY or GOOGLE_API_KEY."
             )
         }
 

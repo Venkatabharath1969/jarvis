@@ -58,10 +58,14 @@ class Settings(BaseSettings):
     USE_MOCK_DATA: bool = True
 
     # ------------------------------------------------------------------ #
-    # Google / Gemini
+    # LLM provider — Groq (primary) or Google Gemini (fallback)
+    # Set GROQ_API_KEY to use Groq; leave blank to fall back to Gemini.
     # ------------------------------------------------------------------ #
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "openai/gpt-oss-120b"   # fastest large model on Groq
+
     GOOGLE_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash"
 
     # ------------------------------------------------------------------ #
     # Microsoft Graph API

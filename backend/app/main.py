@@ -83,11 +83,21 @@ app.add_middleware(
 async def health() -> dict[str, Any]:
     """Basic health check."""
     settings = get_settings()
+    if settings.GROQ_API_KEY:
+        llm_provider = "groq"
+        llm_model = settings.GROQ_MODEL
+    elif settings.GOOGLE_API_KEY:
+        llm_provider = "gemini"
+        llm_model = settings.GEMINI_MODEL
+    else:
+        llm_provider = "none"
+        llm_model = ""
     return {
         "status": "ok",
         "mock_mode": settings.USE_MOCK_DATA,
-        "gemini_model": settings.GEMINI_MODEL,
-        "llm_configured": bool(settings.GOOGLE_API_KEY),
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
+        "llm_configured": llm_provider != "none",
     }
 
 
