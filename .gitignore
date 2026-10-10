@@ -1,0 +1,76 @@
+# Environment files — never commit secrets
+.env
+.env.local
+.env.prod
+.env.staging
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# dist/ APK — tracked in git (large file, use LFS or exclude as needed)
+# Uncomment the line below if you don't want to commit the APK binary:
+# dist/
+
+# Node / React Native
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.yarn/
+.pnp.*
+
+# Expo / React Native build artifacts
+.expo/
+.expo-shared/
+*.apk
+*.aab
+*.ipa
+android/.gradle/
+android/build/
+android/app/build/
+ios/build/
+ios/Pods/
+ios/DerivedData/
+
+# Docker volumes (if mounted locally)
+postgres-data/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~

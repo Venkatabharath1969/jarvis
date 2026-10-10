@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS — Voice Intelligence for the Executive</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0A0A0A;--card:#141418;--border:#2a2a35;
+  --text:#E0E0E0;--text2:#888888;
+  --accent:#00ADEF;--accent2:#00D4AA;
+  --danger:#FF4466;--warn:#FFAA00;--purple:#8855FF;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}
+
+.nav{position:fixed;top:0;left:0;right:0;height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;z-index:100;background:rgba(10,10,10,.85);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
+.nav-logo{font-weight:800;font-size:16px;letter-spacing:4px;color:var(--accent)}
+.nav-logo span{color:var(--text2);font-weight:300;letter-spacing:1px;font-size:13px;margin-left:8px}
+.nav-counter{font-size:13px;color:var(--text2);font-variant-numeric:tabular-nums}
+
+.progress{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:100}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--border);cursor:pointer;transition:all .3s}
+.dot.active{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.dot:hover{background:var(--text2)}
+
+.scene{position:absolute;inset:0;top:56px;bottom:60px;display:flex;flex-direction:column;padding:24px 40px;opacity:0;transform:translateX(60px);transition:opacity .45s ease,transform .45s ease;pointer-events:none;overflow-y:auto}
+.scene.active{opacity:1;transform:translateX(0);pointer-events:auto}
+.scene.exit-left{opacity:0;transform:translateX(-60px)}
+.scene.exit-right{opacity:0;transform:translateX(60px)}
+.scene.enter-from-left{transform:translateX(-60px)}
+
+.lane-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--text2);margin-bottom:8px;padding:3px 10px;background:var(--card);border-radius:4px;display:inline-block}
+.lane-label.user{color:var(--accent)}
+.lane-label.tech{color:var(--accent2)}
+
+.dual{display:flex;flex-direction:column;flex:1;gap:8px}
+.user-lane{flex:0 0 auto;min-height:180px;display:flex;align-items:center;gap:24px;padding:16px 20px;background:rgba(0,173,239,.03);border:1px solid rgba(0,173,239,.12);border-radius:14px}
+.tech-lane{flex:0 0 auto;min-height:120px;display:flex;align-items:center;gap:8px;padding:16px 20px;background:rgba(0,212,170,.03);border:1px solid rgba(0,212,170,.12);border-radius:14px;flex-wrap:wrap;justify-content:center}
+.connector-dots{text-align:center;padding:4px 0;color:var(--border);font-size:18px;letter-spacing:12px}
+.insight-bar{padding:10px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:14px;color:var(--text2);margin-top:auto}
+.insight-bar strong{color:var(--accent)}
+
+.iphone{width:200px;min-width:200px;aspect-ratio:9/19.5;border:8px solid #1a1a1a;border-radius:36px;background:#000;position:relative;box-shadow:0 0 0 2px #333,0 16px 48px rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
+.iphone::before{content:'';position:absolute;top:8px;left:50%;transform:translateX(-50%);width:90px;height:24px;background:#000;border-radius:14px;z-index:2;border:1px solid #222}
+.iphone-screen{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px 16px;position:relative}
+.iphone.dimmed{opacity:.4;filter:grayscale(.5)}
+
+.mic-btn{width:72px;height:72px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#0090cc,#005f8a);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+.mic-btn svg{width:28px;height:28px;fill:#fff}
+.mic-btn::after{content:'';position:absolute;inset:-8px;border-radius:50%;border:2px solid var(--accent);animation:mic-pulse 2s ease-out infinite;opacity:0}
+.mic-btn::before{content:'';position:absolute;inset:-16px;border-radius:50%;border:2px solid var(--accent);animation:mic-pulse 2s ease-out 0.6s infinite;opacity:0}
+@keyframes mic-pulse{0%{transform:scale(.8);opacity:.7}100%{transform:scale(1.6);opacity:0}}
+.mic-label{color:var(--text2);font-size:12px;margin-top:10px}
+.mic-status{color:var(--accent);font-size:11px;margin-top:6px;font-weight:600;letter-spacing:1px}
+
+.waveform{display:flex;gap:4px;align-items:center;height:40px}
+.waveform .bar{width:4px;background:var(--accent);border-radius:2px;animation:wave .5s ease-in-out infinite alternate}
+.waveform .bar:nth-child(1){height:12px;animation-delay:0s}
+.waveform .bar:nth-child(2){height:24px;animation-delay:.1s}
+.waveform .bar:nth-child(3){height:36px;animation-delay:.2s}
+.waveform .bar:nth-child(4){height:20px;animation-delay:.3s}
+.waveform .bar:nth-child(5){height:28px;animation-delay:.15s}
+@keyframes wave{from{height:8px}to{height:40px}}
+
+.thinking-dots{display:flex;gap:6px;align-items:center}
+.thinking-dots .td{width:8px;height:8px;border-radius:50%;background:var(--text2);animation:bounce .6s ease-in-out infinite alternate}
+.thinking-dots .td:nth-child(2){animation-delay:.15s}
+.thinking-dots .td:nth-child(3){animation-delay:.3s}
+@keyframes bounce{from{transform:translateY(0)}to{transform:translateY(-10px)}}
+
+.tnode{padding:10px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:12px;font-weight:600;text-align:center;min-width:80px;transition:all .3s}
+.tnode small{display:block;font-weight:400;color:var(--text2);font-size:10px;margin-top:2px}
+.tnode.accent{border-color:var(--accent);background:rgba(0,173,239,.06)}
+.tnode.accent2{border-color:var(--accent2);background:rgba(0,212,170,.06)}
+.tnode.purple{border-color:var(--purple);background:rgba(136,85,255,.06)}
+.tnode.warn{border-color:var(--warn);background:rgba(255,170,0,.06)}
+.tnode.danger{border-color:var(--danger);background:rgba(255,68,102,.06)}
+.tnode .badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-top:4px;text-transform:uppercase;letter-spacing:1px}
+.tnode .badge.green{background:rgba(0,212,170,.15);color:var(--accent2)}
+.tnode .badge.blue{background:rgba(0,173,239,.15);color:var(--accent)}
+.tarrow{color:var(--accent);font-size:16px;font-weight:300;flex-shrink:0}
+.tparallel{display:flex;flex-direction:column;gap:6px;align-items:center}
+
+.diamond{width:36px;height:36px;background:var(--warn);transform:rotate(45deg);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.diamond span{transform:rotate(-45deg);font-size:14px;font-weight:800;color:#000}
+
+.bubble{padding:8px 12px;border-radius:14px;font-size:13px;line-height:1.4;max-width:220px;margin:3px 0}
+.bubble.user{background:var(--accent);color:#000;align-self:flex-end;border-bottom-right-radius:4px;font-weight:500}
+.bubble.jarvis{background:#1e1e28;color:var(--text);align-self:flex-start;border-bottom-left-radius:4px;border:1px solid var(--border)}
+.chat-thread{display:flex;flex-direction:column;gap:4px;width:100%;padding-top:32px;overflow-y:auto;max-height:100%}
+
+.annotation{font-size:14px;color:var(--text2);line-height:1.7;max-width:280px;padding:16px;background:var(--card);border:1px solid var(--border);border-radius:12px}
+.annotation strong{color:var(--text);display:block;margin-bottom:4px;font-size:15px}
+
+.timeline-bar{display:flex;flex-direction:column;gap:12px;padding:8px 16px}
+.tl-item{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text2)}
+.tl-item .tl-dot{width:10px;height:10px;border-radius:50%;background:var(--border);flex-shrink:0}
+.tl-item .tl-dot.green{background:var(--accent2)}
+.tl-item .tl-dot.blue{background:var(--accent)}
+.tl-item strong{color:var(--text)}
+
+.notif-card{padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:12px;font-size:12px;color:var(--text2);max-width:220px;margin-top:8px}
+.notif-card strong{color:var(--text);display:block;margin-bottom:4px}
+
+.jurors{display:flex;gap:16px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.juror{padding:16px 20px;background:var(--card);border-radius:12px;text-align:center;min-width:140px}
+.juror h4{font-size:13px;margin-bottom:6px}
+.juror .verdict{font-size:11px;font-weight:700;letter-spacing:1px;padding:3px 8px;border-radius:4px;display:inline-block;margin-top:6px}
+
+.title-scene{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;flex:1;position:relative}
+.title-wave{display:flex;gap:6px;align-items:center;justify-content:center;height:60px;margin-bottom:32px;opacity:.3}
+.title-wave .tw-bar{width:3px;background:var(--accent);border-radius:2px;animation:twave 1.2s ease-in-out infinite}
+@keyframes twave{0%,100%{height:8px}50%{height:50px}}
+.title-main{font-size:72px;font-weight:900;letter-spacing:12px;color:var(--text);margin-bottom:8px}
+.title-sub{font-size:20px;color:var(--text2);font-weight:300;margin-bottom:24px}
+.title-date{font-size:13px;color:var(--text2);letter-spacing:2px;border:1px solid var(--border);padding:6px 16px;border-radius:20px}
+
+.scene-title{font-size:22px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.scene-title .st-num{color:var(--accent);font-size:14px;font-weight:800;letter-spacing:2px;text-transform:uppercase}
+
+.icheck{display:flex;flex-direction:column;gap:6px;padding:32px 14px 14px;width:100%;font-size:12px}
+.icheck-item{display:flex;align-items:flex-start;gap:6px;line-height:1.4}
+.icheck-item .ic-check{color:var(--accent2);font-weight:700;flex-shrink:0}
+.icheck-title{font-weight:600;color:var(--accent);font-size:13px;margin-bottom:4px}
+.icheck-approved{margin-top:8px;font-weight:700;color:var(--accent2);font-size:12px;letter-spacing:1px}
+
+.brief-content{display:flex;flex-direction:column;gap:4px;padding:32px 12px 12px;width:100%;font-size:12px;line-height:1.5;color:var(--text2)}
+.brief-content .brief-line{padding:3px 0}
+.brief-content .brief-line strong{color:var(--text)}
+.brief-content .brief-suggest{color:var(--accent);font-weight:500;margin-top:4px}
+
+/* DEEP DIVE SCENES */
+.dd-layout{display:grid;grid-template-columns:320px 1fr;gap:24px;flex:1;align-items:start}
+.dd-info{display:flex;flex-direction:column;gap:12px}
+.dd-card{padding:16px;background:var(--card);border:1px solid var(--border);border-radius:12px}
+.dd-card h4{font-size:14px;font-weight:700;margin-bottom:8px;color:var(--text)}
+.dd-card p{font-size:13px;color:var(--text2);line-height:1.6}
+.dd-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:1px}
+.dd-badge.oss{background:rgba(0,212,170,.12);color:var(--accent2)}
+.dd-badge.free{background:rgba(0,173,239,.12);color:var(--accent)}
+.dd-url{font-size:11px;color:var(--accent);word-break:break-all;font-family:monospace;background:rgba(0,173,239,.06);padding:6px 10px;border-radius:6px;border:1px solid rgba(0,173,239,.15);display:block;margin-top:6px}
+
+.dd-diagram{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:12px;align-items:center;min-height:300px}
+.dd-diagram-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--text2);text-align:center}
+
+/* FLOW ROWS */
+.flow-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center}
+.flow-col{display:flex;flex-direction:column;gap:6px;align-items:center}
+.flow-box{padding:10px 16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:12px;font-weight:600;text-align:center;min-width:90px}
+.flow-box small{display:block;font-weight:400;color:var(--text2);font-size:10px;margin-top:2px}
+.flow-box.hi{border-color:var(--accent);background:rgba(0,173,239,.06)}
+.flow-box.hi2{border-color:var(--accent2);background:rgba(0,212,170,.06)}
+.flow-box.hip{border-color:var(--purple);background:rgba(136,85,255,.06)}
+.flow-box.hiw{border-color:var(--warn);background:rgba(255,170,0,.06)}
+.flow-box.hid{border-color:var(--danger);background:rgba(255,68,102,.06)}
+.flow-arrow-d{color:var(--border);font-size:16px;text-align:center}
+
+/* CODE BLOCK */
+.code-block{background:#0d0d12;border:1px solid var(--border);border-radius:8px;padding:12px;font-family:"SF Mono",Consolas,monospace;font-size:11px;line-height:1.6;color:var(--text2);overflow-x:auto;white-space:pre;width:100%}
+.code-block .ck{color:var(--accent)}
+.code-block .cv{color:var(--accent2)}
+.code-block .cc{color:#555;font-style:italic}
+
+/* PERMISSION TABLE */
+.perm-table{width:100%;border-collapse:collapse;font-size:12px}
+.perm-table th{text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);border-bottom:1px solid var(--border);background:var(--bg)}
+.perm-table td{padding:8px 10px;border-bottom:1px solid rgba(42,42,53,.4);vertical-align:top}
+.perm-table tr:hover td{background:rgba(0,173,239,.02)}
+.perm-scope{font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600}
+.perm-scope.del{background:rgba(0,173,239,.12);color:var(--accent)}
+.perm-scope.app{background:rgba(136,85,255,.12);color:var(--purple)}
+
+/* ERROR CARDS */
+.err-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;width:100%}
+.err-card{padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:11px}
+.err-card .err-code{font-weight:800;font-size:14px;margin-bottom:4px}
+.err-card .err-code.e4{color:var(--danger)}
+.err-card .err-code.e3{color:var(--warn)}
+.err-card .err-code.e5{color:var(--purple)}
+
+/* MEMORY EXAMPLE */
+.mem-example{display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%}
+.mem-col{display:flex;flex-direction:column;gap:8px}
+.mem-col h5{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:4px 0}
+.graph-node{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:12px}
+.graph-node .gn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.graph-edge{font-size:10px;color:var(--text2);text-align:center;padding:2px 0}
+
+/* DEBUG MODE */
+.debug-box{width:100%;padding:12px;background:#0a0a0e;border:1px solid var(--warn);border-radius:8px;font-family:monospace;font-size:11px;line-height:1.6}
+.debug-box .db-time{color:var(--text2)}
+.debug-box .db-ok{color:var(--accent2)}
+.debug-box .db-info{color:var(--accent)}
+.debug-box .db-data{color:var(--purple)}
+.debug-box .db-label{color:var(--warn)}
+
+/* QUADRANTS */
+.quadrants{display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%;max-width:800px;margin:0 auto}
+.quad-card{padding:20px;background:var(--card);border:1px solid var(--border);border-radius:14px}
+.quad-card h4{font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.quad-card p{font-size:13px;color:var(--text2);line-height:1.6}
+
+/* STAGGER ANIMATION for end-to-end flow */
+.e2e-step{opacity:0;transform:translateY(16px);animation:stepIn .5s ease forwards}
+@keyframes stepIn{to{opacity:1;transform:translateY(0)}}
+.e2e-step:nth-child(1){animation-delay:.1s}
+.e2e-step:nth-child(2){animation-delay:.25s}
+.e2e-step:nth-child(3){animation-delay:.4s}
+.e2e-step:nth-child(4){animation-delay:.55s}
+.e2e-step:nth-child(5){animation-delay:.7s}
+.e2e-step:nth-child(6){animation-delay:.85s}
+.e2e-step:nth-child(7){animation-delay:1s}
+.e2e-step:nth-child(8){animation-delay:1.15s}
+.e2e-step:nth-child(9){animation-delay:1.3s}
+.e2e-step:nth-child(10){animation-delay:1.45s}
+
+.e2e-flow{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;max-width:900px;margin:0 auto}
+.e2e-row{display:flex;align-items:center;gap:10px;width:100%}
+.e2e-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
+.e2e-box{flex:1;padding:10px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.e2e-box strong{color:var(--text)}
+.e2e-box small{color:var(--text2);font-size:11px}
+.e2e-time{font-family:monospace;font-size:11px;font-weight:700;min-width:60px;text-align:right;flex-shrink:0}
+.e2e-arrow{text-align:center;color:var(--border);font-size:14px;padding:0 0 0 38px}
+.e2e-parallel{display:flex;gap:8px;flex:1}
+.e2e-parallel .e2e-pbox{flex:1;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;font-size:12px;text-align:center}
+
+/* VOICE TABLE */
+.voice-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.voice-tbl th{text-align:left;padding:10px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);border-bottom:1px solid var(--border);background:var(--bg)}
+.voice-tbl td{padding:10px;border-bottom:1px solid rgba(42,42,53,.4);vertical-align:top}
+.voice-tbl .pick{background:rgba(0,212,170,.04);border-left:2px solid var(--accent2)}
+.voice-tbl .pick td:first-child{font-weight:700;color:var(--accent2)}
+
+/* AUTH HIERARCHY */
+.auth-tree{font-size:12px;line-height:2;font-family:monospace;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;width:100%}
+.auth-tree .at-t{color:var(--warn)}
+.auth-tree .at-a{color:var(--accent)}
+.auth-tree .at-u{color:var(--accent2)}
+.auth-tree .at-dim{color:var(--text2)}
+
+/* DB SCHEMA */
+.db-schema{font-family:"SF Mono",Consolas,monospace;font-size:11px;line-height:1.5;padding:12px;background:#0d0d12;border:1px solid var(--border);border-radius:8px;overflow-x:auto;white-space:pre;width:100%}
+.db-schema .sql-k{color:var(--accent)}
+.db-schema .sql-t{color:var(--accent2)}
+.db-schema .sql-c{color:#555;font-style:italic}
+.db-schema .sql-v{color:var(--warn)}
+
+@media(max-width:1000px){
+  .dd-layout{grid-template-columns:1fr;gap:16px}
+  .mem-example{grid-template-columns:1fr}
+  .user-lane{flex-direction:column;gap:12px}
+  .iphone{width:160px;min-width:160px}
+  .annotation{max-width:100%}
+  .quadrants{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="nav-logo">JARVIS<span>Architecture Brief</span></div>
+  <div class="nav-counter" id="counter">1 / 14</div>
+</div>
+<div class="progress" id="progress"></div>
+
+<!-- ========== SCENE 0: TITLE ========== -->
+<div class="scene active" data-scene="0">
+  <div class="title-scene">
+    <div class="title-wave">
+      <div class="tw-bar" style="animation-delay:0s"></div>
+      <div class="tw-bar" style="animation-delay:.15s"></div>
+      <div class="tw-bar" style="animation-delay:.3s"></div>
+      <div class="tw-bar" style="animation-delay:.1s"></div>
+      <div class="tw-bar" style="animation-delay:.25s"></div>
+      <div class="tw-bar" style="animation-delay:.05s"></div>
+      <div class="tw-bar" style="animation-delay:.35s"></div>
+      <div class="tw-bar" style="animation-delay:.2s"></div>
+      <div class="tw-bar" style="animation-delay:.12s"></div>
+      <div class="tw-bar" style="animation-delay:.28s"></div>
+      <div class="tw-bar" style="animation-delay:.08s"></div>
+      <div class="tw-bar" style="animation-delay:.22s"></div>
+    </div>
+    <div class="title-main">JARVIS</div>
+    <div class="title-sub">Voice Intelligence for the Executive</div>
+    <div class="title-date">Architecture &amp; Prototype Plan &bull; October 2026</div>
+  </div>
+</div>
+
+<!-- ========== SCENE 1: APP LAUNCH ========== -->
+<div class="scene" data-scene="1">
+  <div class="scene-title"><span class="st-num">Scene 1</span> App Launch + Idle State</div>
+  <div class="dual">
+    <span class="lane-label user">User Journey</span>
+    <div class="user-lane">
+      <div class="iphone">
+        <div class="iphone-screen">
+          <div class="mic-btn">
+            <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 4.93c-3.94-.49-7-3.85-7-7.93h2c0 3.31 2.69 6 6 6s6-2.69 6-6h2c0 4.08-3.06 7.44-7 7.93V19h4v2H8v-2h4v-2.07z"/></svg>
+          </div>
+          <div class="mic-label">Tap to speak</div>
+          <div class="mic-status">Jarvis &bull; Ready</div>
+        </div>
+      </div>
+      <div class="annotation">
+        <strong>Single-purpose interface</strong>
+        No menus, no dashboards, no typing. One button. Voice-first. The user opens the app and speaks. That's it.
+      </div>
+    </div>
+    <div class="connector-dots">&#8942; &emsp; &#8942; &emsp; &#8942;</div>
+    <span class="lane-label tech">Technical Flow</span>
+    <div class="tech-lane">
+      <div class="tnode accent"><small>SwiftUI</small>iOS App</div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode accent2">MSAL / Entra<small>Auth</small><span class="badge green">Authenticated</span></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">WebSocket<small>ALB</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">FastAPI<small>ECS Fargate</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode accent2">Session Ready<span class="badge green">Secure</span></div>
+    </div>
+    <div class="insight-bar"><strong>Insight:</strong> Biometric auth + zero-trust session. No passwords. No training needed.</div>
+  </div>
+</div>
+
+<!-- ========== SCENE 2: SIMPLE Q&A ========== -->
+<div class="scene" data-scene="2">
+  <div class="scene-title"><span class="st-num">Scene 2</span> "When is my next meeting?"</div>
+  <div class="dual">
+    <span class="lane-label user">User Journey</span>
+    <div class="user-lane">
+      <div class="iphone">
+        <div class="iphone-screen">
+          <div style="font-size:11px;color:var(--accent);margin-bottom:8px;font-weight:600">LISTENING</div>
+          <div class="waveform">
+            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          </div>
+          <div style="margin-top:12px"><div class="thinking-dots"><div class="td"></div><div class="td"></div><div class="td"></div></div></div>
+          <div style="margin-top:12px;font-size:11px;color:var(--text2);text-align:center;padding:0 8px;line-height:1.4">
+            "Your next meeting is <strong style="color:var(--text)">Project Delta</strong> at 3 PM with Bharath and Anupama"
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="bubble user" style="max-width:260px">"When is my next meeting?"</div>
+        <div class="annotation">
+          <strong>Three states visible</strong>
+          Listening (waveform) &rarr; Thinking (dots) &rarr; Speaking (answer). The user always knows what Jarvis is doing.
+        </div>
+      </div>
+    </div>
+    <div class="connector-dots">&#8942; &emsp; &#8942; &emsp; &#8942;</div>
+    <span class="lane-label tech">Technical Flow</span>
+    <div class="tech-lane">
+      <div class="tnode">On-device STT<small>Apple</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode accent">Concierge<small>Router</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tparallel">
+        <div class="tnode accent2">Calendar Agent<small>Graph API</small></div>
+        <div class="tnode purple">Memory Recall<small>pgvector</small></div>
+      </div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">Polly TTS<small>Streaming</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode accent">Audio Stream</div>
+    </div>
+    <div class="insight-bar"><strong>Insight:</strong> Under 2 seconds end-to-end. Parallel agent execution. Every component is a managed service.</div>
+  </div>
+</div>
+
+<!-- ========== SCENE 3: VOICE SCHEDULING ========== -->
+<div class="scene" data-scene="3">
+  <div class="scene-title"><span class="st-num">Scene 3</span> Voice Scheduling with Clarification</div>
+  <div class="dual">
+    <span class="lane-label user">User Journey</span>
+    <div class="user-lane">
+      <div class="iphone">
+        <div class="iphone-screen">
+          <div class="chat-thread">
+            <div class="bubble user">"Schedule a meeting with Bharath Tuesday 9 PM"</div>
+            <div class="bubble jarvis">I found two Bharath &mdash; <strong>Kumar (Finance)</strong> or <strong>Reddy (Engineering)</strong>. Which one?</div>
+            <div class="bubble user">"Finance"</div>
+            <div class="bubble jarvis">Booking <strong>Bharath Kumar</strong>, Tuesday 9 PM, 30 min. Shall I send?</div>
+            <div class="bubble user">"Yes"</div>
+            <div class="bubble jarvis" style="border-color:var(--accent2);color:var(--accent2)">Done. Invite sent.</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <strong>Intelligent clarification</strong>
+        Detects ambiguity. Asks, doesn't guess. Reads back before acting. The user confirms every external action.
+      </div>
+    </div>
+    <div class="connector-dots">&#8942; &emsp; &#8942; &emsp; &#8942;</div>
+    <span class="lane-label tech">Technical Flow</span>
+    <div class="tech-lane">
+      <div class="tnode accent">Concierge</div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">Scheduler<small>Agent</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">Entity<small>Extract</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="diamond"><span>?</span></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode warn">People Resolve<small>Graph API</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">Clarify<small>Loop</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">Conflict<small>Check</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode accent2">Create Event<small>Graph API</small></div>
+    </div>
+    <div class="insight-bar"><strong>Insight:</strong> Does not guess. Detects ambiguity, asks, confirms. Prevents costly scheduling errors.</div>
+  </div>
+</div>
+
+<!-- ========== SCENE 4: MEETING AUTO-SUMMARY ========== -->
+<div class="scene" data-scene="4">
+  <div class="scene-title"><span class="st-num">Scene 4</span> Meeting Auto-Summary (Background)</div>
+  <div class="dual">
+    <span class="lane-label user">User Journey</span>
+    <div class="user-lane">
+      <div class="iphone dimmed">
+        <div class="iphone-screen">
+          <div style="font-size:12px;color:var(--text2);text-align:center">Phone locked<br><span style="font-size:10px">User is in meeting</span></div>
+        </div>
+      </div>
+      <div class="timeline-bar">
+        <div class="tl-item"><div class="tl-dot blue"></div><strong>3:00 PM</strong> &mdash; Meeting starts</div>
+        <div class="tl-item"><div class="tl-dot"></div><strong>3:45 PM</strong> &mdash; Meeting ends</div>
+        <div class="tl-item"><div class="tl-dot green"></div><strong>3:50 PM</strong> &mdash; Summary ready</div>
+        <div class="notif-card">
+          <strong>Project Delta Summary</strong>
+          3 decisions captured<br>5 action items extracted<br>
+          <span style="color:var(--accent)">3 follow-ups identified</span>
+        </div>
+      </div>
+    </div>
+    <div class="connector-dots">&#8942; &emsp; &#8942; &emsp; &#8942;</div>
+    <span class="lane-label tech">Technical Flow</span>
+    <div class="tech-lane">
+      <div class="tnode">Graph Webhook<small>Notification</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">Lambda<small>Validation</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">SQS<small>Queue</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode accent">Scribe Agent<small>Transcript &rarr; Cards</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tparallel">
+        <div class="tnode accent2">Summary + Decisions</div>
+        <div class="tnode accent2">Action Items</div>
+        <div class="tnode accent2">Follow-up Intents</div>
+      </div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode purple">Second Brain<small>pgvector</small></div>
+    </div>
+    <div class="insight-bar"><strong>Insight:</strong> Zero user action. System captures, summarizes, and identifies follow-ups autonomously.</div>
+  </div>
+</div>
+
+<!-- ========== SCENE 5: AGENT COUNCIL ========== -->
+<div class="scene" data-scene="5">
+  <div class="scene-title"><span class="st-num">Scene 5</span> Agent Council &mdash; The Jury</div>
+  <div class="dual">
+    <span class="lane-label user">User Journey</span>
+    <div class="user-lane">
+      <div class="iphone">
+        <div class="iphone-screen">
+          <div class="icheck">
+            <div class="icheck-title">Before I send the invite, I verified:</div>
+            <div class="icheck-item"><span class="ic-check">&#10003;</span> Schedule clear for all participants</div>
+            <div class="icheck-item"><span class="ic-check">&#10003;</span> Participants confirmed from transcript</div>
+            <div class="icheck-item"><span class="ic-check">&#10003;</span> Agreement verified in context</div>
+            <div class="icheck-approved">Council approved. Sending now.</div>
+          </div>
+        </div>
+      </div>
+      <div class="annotation">
+        <strong>Multi-model verification</strong>
+        Before any external action, three independent AI models from different families verify it. The proposer is never a juror.
+      </div>
+    </div>
+    <div class="connector-dots">&#8942; &emsp; &#8942; &emsp; &#8942;</div>
+    <span class="lane-label tech">Technical Flow</span>
+    <div class="tech-lane" style="flex-direction:column;gap:12px">
+      <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:2px;font-weight:700">Unanimous required for external actions</div>
+      <div class="jurors">
+        <div class="juror" style="border:1px solid var(--accent)"><h4 style="color:var(--accent)">Juror 1</h4><div style="font-size:12px;color:var(--text2)">Claude</div><div class="verdict" style="background:rgba(0,212,170,.15);color:var(--accent2)">&#10003; APPROVED</div></div>
+        <div class="juror" style="border:1px solid var(--purple)"><h4 style="color:var(--purple)">Juror 2</h4><div style="font-size:12px;color:var(--text2)">GPT</div><div class="verdict" style="background:rgba(0,212,170,.15);color:var(--accent2)">&#10003; APPROVED</div></div>
+        <div class="juror" style="border:1px solid var(--warn)"><h4 style="color:var(--warn)">Juror 3</h4><div style="font-size:12px;color:var(--text2)">Gemini</div><div class="verdict" style="background:rgba(0,212,170,.15);color:var(--accent2)">&#10003; APPROVED</div></div>
+      </div>
+      <div class="tarrow" style="font-size:20px">&#9660;</div>
+      <div style="display:flex;align-items:center;gap:12px;justify-content:center">
+        <div class="tnode accent2" style="font-weight:700">Foreman<small>Deterministic code, not LLM</small></div>
+        <div class="tarrow">&rarr;</div>
+        <div class="tnode accent">Execute<small>Create Teams Invite</small></div>
+      </div>
+    </div>
+    <div class="insight-bar"><strong>Insight:</strong> 3 independent models, 3 different families. Foreman is deterministic code, not AI. Enterprise-grade trust.</div>
+  </div>
+</div>
+
+<!-- ========== SCENE 6: PRE-MEETING BRIEF ========== -->
+<div class="scene" data-scene="6">
+  <div class="scene-title"><span class="st-num">Scene 6</span> Pre-Meeting Brief</div>
+  <div class="dual">
+    <span class="lane-label user">User Journey</span>
+    <div class="user-lane">
+      <div class="iphone">
+        <div class="iphone-screen">
+          <div class="brief-content">
+            <div class="brief-line"><strong>Your 3 PM is Project Delta</strong> with Bharath.</div>
+            <div class="brief-line">Last time you debated Q4 timeline &mdash; disagreed on launch date.</div>
+            <div class="brief-line">2 open action items from Bharath.</div>
+            <div class="brief-suggest">Suggest asking about the revised timeline.</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="bubble user">"Brief me for my 3 PM"</div>
+        <div class="annotation">
+          <strong>Context-aware intelligence</strong>
+          Knows who's in the meeting, what was discussed last time, what's changed, and what's still open. Delivered by voice.
+        </div>
+      </div>
+    </div>
+    <div class="connector-dots">&#8942; &emsp; &#8942; &emsp; &#8942;</div>
+    <span class="lane-label tech">Technical Flow</span>
+    <div class="tech-lane">
+      <div class="tparallel">
+        <div class="tnode accent">Calendar API<small>Attendees</small></div>
+        <div class="tnode purple">Second Brain<small>Past meetings</small></div>
+        <div class="tnode warn">Email Threads<small>Recent</small></div>
+        <div class="tnode">Documents<small>Updated</small></div>
+      </div>
+      <div class="tarrow" style="font-size:24px">&rarr;</div>
+      <div class="tnode accent2" style="font-weight:700">Briefing Agent<small>Synthesis</small></div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode">"Questions<br>to Ask"</div>
+      <div class="tarrow">&rarr;</div>
+      <div class="tnode accent">Polly TTS<small>Voice</small></div>
+    </div>
+    <div class="insight-bar"><strong>Insight:</strong> Every meeting builds the knowledge graph. Jarvis remembers what you said to whom, and when.</div>
+  </div>
+</div>
+
+<!-- ========== SCENE 7: LANGGRAPH EXPLAINED ========== -->
+<div class="scene" data-scene="7">
+  <div class="scene-title"><span class="st-num">Deep Dive</span> LangGraph &mdash; The Orchestration Engine</div>
+  <div class="dd-layout">
+    <div class="dd-info">
+      <div class="dd-card">
+        <h4>What is LangGraph?</h4>
+        <p>LangGraph is a <strong style="color:var(--text)">traffic controller for AI agents</strong>. It decides which specialist agent to call, in what order, and handles the results. Think of it as a manager who assigns the right task to the right team member.</p>
+      </div>
+      <div class="dd-card">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <span class="dd-badge oss">OPEN SOURCE</span>
+          <span class="dd-badge free">MIT LICENSE</span>
+          <span class="dd-badge free">FREE</span>
+        </div>
+        <p>Install via pip. Self-hosted. No vendor lock-in.</p>
+        <span class="dd-url">github.com/langchain-ai/langgraph</span>
+      </div>
+      <div class="dd-card">
+        <h4>Used in production by</h4>
+        <p style="font-size:14px;color:var(--text)">Klarna, Replit, Elastic, LinkedIn</p>
+      </div>
+      <div class="dd-card">
+        <h4>Why we chose it</h4>
+        <p>Graph-based workflows with <strong style="color:var(--text)">checkpointing</strong> (can pause and resume), <strong style="color:var(--text)">human-in-the-loop</strong> (ask user before acting), and <strong style="color:var(--text)">parallel execution</strong> (run 2 agents at once).</p>
+      </div>
+    </div>
+    <div class="dd-diagram">
+      <div class="dd-diagram-title">How LangGraph Routes a Voice Request</div>
+      <div style="margin-top:8px">
+        <div class="flow-row">
+          <div class="flow-box hi" style="font-size:14px">User says:<br><em style="color:var(--accent)">"Am I free Thursday?"</em></div>
+        </div>
+        <div class="flow-arrow-d">&#9660;</div>
+        <div class="flow-row">
+          <div class="flow-box hi" style="min-width:200px">
+            <strong style="color:var(--accent)">Supervisor Node</strong>
+            <small>Understands intent, picks the right agent</small>
+            <small style="color:var(--accent)">Intent: calendar_query</small>
+          </div>
+        </div>
+        <div class="flow-arrow-d">&#9660; routes to the right specialist</div>
+        <div class="flow-row" style="gap:12px">
+          <div class="flow-box hi2" style="border-width:2px">
+            <strong>Calendar Agent</strong>
+            <small style="color:var(--accent2)">&#10003; SELECTED</small>
+            <small>Checks free/busy via Graph API</small>
+          </div>
+          <div class="flow-box" style="opacity:.4">
+            <strong>Scheduler Agent</strong>
+            <small>Creates meetings</small>
+          </div>
+          <div class="flow-box" style="opacity:.4">
+            <strong>Research Agent</strong>
+            <small>Web search</small>
+          </div>
+          <div class="flow-box" style="opacity:.4">
+            <strong>Briefing Agent</strong>
+            <small>Pre-meeting prep</small>
+          </div>
+        </div>
+        <div class="flow-arrow-d">&#9660; agent returns result</div>
+        <div class="flow-row">
+          <div class="flow-box hi2">
+            <strong>Result:</strong> "Thursday is free from 2&ndash;5 PM"
+            <small>Supervisor composes spoken answer</small>
+          </div>
+        </div>
+        <div class="flow-arrow-d">&#9660;</div>
+        <div class="flow-row">
+          <div class="flow-box hi">Voice: "Yes, you're free Thursday afternoon from 2 to 5."</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="insight-bar" style="margin-top:12px"><strong>Key idea:</strong> LangGraph is the brain's routing system. It never answers questions itself &mdash; it sends each question to the specialist who can answer it best, then assembles the response.</div>
+</div>
+
+<!-- ========== SCENE 8: SKILLS LIBRARY ========== -->
+<div class="scene" data-scene="8">
+  <div class="scene-title"><span class="st-num">Deep Dive</span> Skills &mdash; The AI's Living Knowledge</div>
+  <div class="dd-layout">
+    <div class="dd-info">
+      <div class="dd-card">
+        <h4>What are Skills?</h4>
+        <p>Skills are <strong style="color:var(--text)">written instruction files</strong> that tell each agent exactly how to do its job. Think of them as an <strong style="color:var(--accent)">employee handbook for AI</strong> &mdash; not code, but clear step-by-step procedures.</p>
+      </div>
+      <div class="dd-card">
+        <h4>Why not just hardcode the logic?</h4>
+        <p>Skills are <strong style="color:var(--text)">editable without redeploying code</strong>. If the user wants briefings to include competitor news, we update a markdown file &mdash; not the application.</p>
+      </div>
+      <div class="dd-card" style="border-color:var(--accent)">
+        <h4 style="color:var(--accent)">Filled in real-time</h4>
+        <p>Skills <strong style="color:var(--text)">grow smarter over time</strong>. As the user interacts with Jarvis, preferences are learned and skills are refined. Week 1: generic. Week 4: personalized. Week 12: deeply tuned.</p>
+      </div>
+      <div class="dd-card">
+        <h4>Versioned &amp; tested</h4>
+        <p>Every skill change is tracked in git. An evaluation suite runs before any skill update goes live. A human approves.</p>
+      </div>
+    </div>
+    <div class="dd-diagram">
+      <div class="dd-diagram-title">Example: daily-briefing Skill File</div>
+      <div class="code-block" style="margin-top:8px"><span class="cc"># skills/daily-briefing/SKILL.md</span>
+
+<span class="ck">Name:</span> <span class="cv">Daily Briefing</span>
+<span class="ck">Agent:</span> <span class="cv">Briefing Agent</span>
+<span class="ck">Trigger:</span> <span class="cv">Every day at 06:00 OR "brief me on my day"</span>
+
+<span class="ck">Steps:</span>
+  <span class="cv">1.</span> Fetch today's calendar events
+  <span class="cv">2.</span> Rank by importance (VIP attendees first)
+  <span class="cv">3.</span> For each meeting, pull:
+     - Last interaction with attendees
+     - Open action items
+     - Unresolved debates
+  <span class="cv">4.</span> Check top-ranked Teams messages (triage score &gt; 7)
+  <span class="cv">5.</span> Check pending follow-ups that are overdue
+  <span class="cv">6.</span> Compose spoken brief: 60-90 seconds max
+
+<span class="ck">Tone:</span> <span class="cv">Concise, professional, no filler words</span>
+<span class="ck">Privacy:</span> <span class="cv">Never mention private-scope data in shared context</span></div>
+
+      <div class="dd-diagram-title" style="margin-top:16px">All Skills in the Library</div>
+      <div class="flow-row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+        <div class="flow-box hi2">daily-briefing</div>
+        <div class="flow-box hi">pre-meeting-brief</div>
+        <div class="flow-box hip">triage-priorities</div>
+        <div class="flow-box hiw">follow-up-policy</div>
+        <div class="flow-box hi2">voice-style</div>
+        <div class="flow-box hi">meeting-summary</div>
+        <div class="flow-box hip">research-hygiene</div>
+        <div class="flow-box hiw">user-profile</div>
+      </div>
+      <div style="font-size:12px;color:var(--text2);text-align:center;margin-top:8px">Each skill is a markdown file. Loaded progressively &mdash; name first, full content only when the agent needs it.</div>
+    </div>
+  </div>
+  <div class="insight-bar" style="margin-top:12px"><strong>Key idea:</strong> Skills separate WHAT the AI knows from HOW the code works. Domain experts can update skills without touching code. Knowledge grows with every interaction.</div>
+</div>
+
+<!-- ========== SCENE 9: MICROSOFT GRAPH ========== -->
+<div class="scene" data-scene="9">
+  <div class="scene-title"><span class="st-num">Deep Dive</span> Microsoft Graph &mdash; Connecting to M365</div>
+  <div class="dd-layout">
+    <div class="dd-info">
+      <div class="dd-card">
+        <h4>What is Microsoft Graph?</h4>
+        <p>Microsoft Graph is the <strong style="color:var(--text)">official API to access Office 365</strong> data &mdash; Calendar, Teams, Mail, People, SharePoint. It's the secure doorway into the user's work data.</p>
+      </div>
+      <div class="dd-card" style="border-color:var(--warn)">
+        <h4 style="color:var(--warn)">Admin Consent Required</h4>
+        <p>An <strong style="color:var(--text)">Entra ID admin</strong> must approve each permission before Jarvis can access any data. This is a one-time setup. Without it, every API call returns <strong style="color:var(--danger)">403 Forbidden</strong>.</p>
+      </div>
+      <div class="dd-card">
+        <h4>Setup steps</h4>
+        <p>1. Register an app in Entra ID<br>
+        2. Request specific permissions<br>
+        3. Admin clicks "Grant consent"<br>
+        4. Enable transcript access in Teams admin<br>
+        5. Jarvis gets OAuth tokens to call the API</p>
+      </div>
+    </div>
+    <div class="dd-diagram">
+      <div class="dd-diagram-title">Permissions Jarvis Needs</div>
+      <table class="perm-table" style="margin-top:8px">
+        <thead><tr><th>Permission</th><th>Type</th><th>What it accesses</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Calendars.ReadWrite</strong></td><td><span class="perm-scope del">Delegated</span></td><td>Read/write the user's calendar events</td></tr>
+          <tr><td><strong>User.ReadBasic.All</strong></td><td><span class="perm-scope del">Delegated</span></td><td>Look up people by name</td></tr>
+          <tr><td><strong>People.Read</strong></td><td><span class="perm-scope del">Delegated</span></td><td>Resolve "Bharath" to a contact</td></tr>
+          <tr><td><strong>Chat.Read</strong></td><td><span class="perm-scope del">Delegated</span></td><td>Read Teams chat messages (triage)</td></tr>
+          <tr><td><strong>Mail.Read</strong></td><td><span class="perm-scope del">Delegated</span></td><td>Read Outlook emails (triage)</td></tr>
+          <tr><td><strong>OnlineMeetingTranscript.Read.All</strong></td><td><span class="perm-scope app">Application</span></td><td>Fetch Teams meeting transcripts</td></tr>
+        </tbody>
+      </table>
+
+      <div class="dd-diagram-title" style="margin-top:16px">Common Errors to Watch For</div>
+      <div class="err-row" style="margin-top:8px">
+        <div class="err-card"><div class="err-code e4">401</div><strong>Token expired.</strong> Refresh the OAuth token. Tokens last 1 hour.</div>
+        <div class="err-card"><div class="err-code e4">403</div><strong>Permission missing.</strong> Admin hasn't granted consent for this scope.</div>
+        <div class="err-card"><div class="err-code e3">429</div><strong>Throttled.</strong> Too many requests. Back off and retry with exponential delay.</div>
+        <div class="err-card"><div class="err-code e5">503</div><strong>Service unavailable.</strong> Graph is temporarily down. Queue and retry.</div>
+      </div>
+
+      <div class="dd-diagram-title" style="margin-top:16px">Auth Hierarchy &mdash; Who Sets Up What?</div>
+      <div class="auth-tree" style="margin-top:8px"><span class="at-t">Mercedes-Benz M365 Tenant</span> <span class="at-dim">(your organization)</span>
+  <span class="at-dim">└──</span> <span class="at-a">App Registration: "Jarvis CEO"</span> <span class="at-dim">(one-time setup by IT admin)</span>
+       <span class="at-dim">├──</span> Client ID + Secret <span class="at-dim">(stored in AWS Secrets Manager)</span>
+       <span class="at-dim">├──</span> Permissions granted <span class="at-dim">(admin clicks "Grant consent" — once)</span>
+       <span class="at-dim">├──</span> Teams Admin enables transcription <span class="at-dim">(once)</span>
+       <span class="at-dim">└──</span> <span class="at-u">Users</span> <span class="at-dim">(each signs in with their own M365 account):</span>
+            <span class="at-dim">├──</span> <span class="at-u">Bharath</span> <span class="at-dim">→ his token → GET /me = Bharath's calendar, Teams, mail</span>
+            <span class="at-dim">├──</span> <span class="at-u">Anupama</span> <span class="at-dim">→ her token → GET /me = Anupama's calendar, Teams, mail</span>
+            <span class="at-dim">└──</span> <span class="at-u">Manager X</span> <span class="at-dim">→ their token → GET /me = their data only</span>
+
+<span class="at-a">No Teams IDs needed. No Channel IDs. No per-user provisioning.</span>
+<span class="at-dim">The /me endpoint auto-resolves to whoever's OAuth token is used.</span></div>
+
+      <div class="dd-diagram-title" style="margin-top:16px">Example API Call</div>
+      <div class="code-block" style="margin-top:8px"><span class="cc">// Get Bharath's next meeting — just use /me with his token</span>
+<span class="ck">GET</span> <span class="cv">https://graph.microsoft.com/v1.0/me/calendar/events</span>
+    <span class="ck">?$filter=</span>start/dateTime ge '2026-10-09T00:00:00'
+    <span class="ck">&$orderby=</span>start/dateTime
+    <span class="ck">&$top=</span>1
+<span class="ck">Authorization:</span> Bearer <span class="cv">eyJ0eXAi...bharath_token</span>
+
+<span class="cc">// Response:</span>
+{ <span class="ck">"subject"</span>: <span class="cv">"Project Delta Sync"</span>,
+  <span class="ck">"start"</span>: { <span class="cv">"dateTime": "2026-10-09T15:00:00"</span> },
+  <span class="ck">"attendees"</span>: [<span class="cv">"bharath@mercedes.com"</span>, <span class="cv">"anupama@mercedes.com"</span>] }</div>
+    </div>
+  </div>
+  <div class="insight-bar" style="margin-top:12px"><strong>Key idea:</strong> Microsoft Graph is the single secure gateway to all M365 data. Every permission is explicit, admin-approved, and audited. No back doors.</div>
+</div>
+
+<!-- ========== SCENE 10: SECOND BRAIN ========== -->
+<div class="scene" data-scene="10">
+  <div class="scene-title"><span class="st-num">Deep Dive</span> Second Brain &mdash; Cognee + pgvector</div>
+  <div class="dd-layout">
+    <div class="dd-info">
+      <div class="dd-card">
+        <h4>What is the Second Brain?</h4>
+        <p>The second brain is Jarvis's <strong style="color:var(--text)">long-term memory</strong>. It remembers every meeting, every decision, every person &mdash; and can recall any of it instantly. It uses <strong style="color:var(--accent)">two systems</strong> that work together.</p>
+      </div>
+      <div class="dd-card" style="border-color:var(--accent2)">
+        <h4 style="color:var(--accent2)">Cognee &mdash; The Mind Map</h4>
+        <div style="display:flex;gap:6px;margin:6px 0"><span class="dd-badge oss">OPEN SOURCE</span><span class="dd-badge free">APACHE 2.0</span></div>
+        <p>Stores <strong style="color:var(--text)">entities and relationships</strong> like a mind map. WHO said WHAT to WHOM, WHEN.</p>
+        <span class="dd-url">github.com/topoteretes/cognee</span>
+      </div>
+      <div class="dd-card" style="border-color:var(--purple)">
+        <h4 style="color:var(--purple)">pgvector &mdash; The Search Engine</h4>
+        <div style="display:flex;gap:6px;margin:6px 0"><span class="dd-badge oss">OPEN SOURCE</span><span class="dd-badge free">PostgreSQL Extension</span></div>
+        <p>Stores text as <strong style="color:var(--text)">numerical vectors</strong>. Finds relevant information by meaning, not just keywords.</p>
+        <span class="dd-url">github.com/pgvector/pgvector</span>
+      </div>
+      <div class="dd-card">
+        <h4>Data stored in PostgreSQL</h4>
+        <p>Both Cognee and pgvector run on <strong style="color:var(--text)">PostgreSQL</strong> &mdash; the world's most trusted open-source database. One database, two superpowers.</p>
+      </div>
+    </div>
+    <div class="dd-diagram" style="gap:16px">
+      <div class="dd-diagram-title">Example: After a Project Delta Meeting</div>
+
+      <div class="mem-example">
+        <div class="mem-col">
+          <h5 style="color:var(--accent2)">Cognee &mdash; Knowledge Graph</h5>
+          <div class="graph-node"><div class="gn-dot" style="background:var(--accent)"></div><strong>Bharath</strong> (Finance)</div>
+          <div class="graph-edge">&darr; attended &darr;</div>
+          <div class="graph-node"><div class="gn-dot" style="background:var(--accent2)"></div><strong>Project Delta Meeting</strong> (Oct 7)</div>
+          <div class="graph-edge">&darr; discussed &darr;</div>
+          <div class="graph-node"><div class="gn-dot" style="background:var(--warn)"></div><strong>Q4 Timeline</strong> &mdash; disagreed on launch</div>
+          <div class="graph-edge">&darr; action item &darr;</div>
+          <div class="graph-node"><div class="gn-dot" style="background:var(--danger)"></div><strong>Bharath owes:</strong> revised estimate by Friday</div>
+        </div>
+        <div class="mem-col">
+          <h5 style="color:var(--purple)">pgvector &mdash; Semantic Search</h5>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:12px">
+            <div style="color:var(--accent);font-weight:600;margin-bottom:6px">Query: "what did Bharath commit to?"</div>
+            <div style="color:var(--text2);font-size:11px;margin-bottom:4px">Converts text to vector &rarr; searches 1000+ chunks</div>
+            <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px">
+              <div style="color:var(--accent2);font-size:10px;font-weight:600">MATCH 1 (97% relevance)</div>
+              <div style="color:var(--text);font-size:11px">"Bharath agreed to provide a revised Q4 estimate by Friday. He said the APAC numbers need recalculation."</div>
+            </div>
+            <div style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px">
+              <div style="color:var(--accent2);font-size:10px;font-weight:600">MATCH 2 (89% relevance)</div>
+              <div style="color:var(--text);font-size:11px">"Bharath committed to scheduling a follow-up with the design team next Wednesday."</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dd-diagram-title" style="margin-top:12px">Actual PostgreSQL Table Structure</div>
+      <div class="db-schema" style="margin-top:8px"><span class="sql-c">-- Cognee Knowledge Graph tables</span>
+<span class="sql-k">CREATE TABLE</span> <span class="sql-t">entities</span> (
+  id         <span class="sql-v">SERIAL PRIMARY KEY</span>,
+  name       <span class="sql-v">TEXT</span>,         <span class="sql-c">-- "Bharath Kumar"</span>
+  type       <span class="sql-v">TEXT</span>,         <span class="sql-c">-- "person" | "project" | "topic"</span>
+  first_seen <span class="sql-v">TIMESTAMP</span>,   <span class="sql-c">-- 2026-10-01</span>
+  last_seen  <span class="sql-v">TIMESTAMP</span>    <span class="sql-c">-- 2026-10-07 (auto-updated)</span>
+);
+
+<span class="sql-k">CREATE TABLE</span> <span class="sql-t">relationships</span> (
+  from_id    <span class="sql-v">INT REFERENCES</span> entities(id),  <span class="sql-c">-- Bharath (id=1)</span>
+  relation   <span class="sql-v">TEXT</span>,         <span class="sql-c">-- "attended" | "committed_to" | "discussed"</span>
+  to_id      <span class="sql-v">INT REFERENCES</span> entities(id),  <span class="sql-c">-- Meeting-Oct7 (id=5)</span>
+  context    <span class="sql-v">TEXT</span>,         <span class="sql-c">-- "Q4 timeline debate"</span>
+  source     <span class="sql-v">TEXT</span>,         <span class="sql-c">-- "meeting-oct7-transcript"</span>
+  created_at <span class="sql-v">TIMESTAMP</span>
+);
+
+<span class="sql-c">-- pgvector Semantic Search table</span>
+<span class="sql-k">CREATE TABLE</span> <span class="sql-t">embeddings</span> (
+  id         <span class="sql-v">SERIAL PRIMARY KEY</span>,
+  source     <span class="sql-v">TEXT</span>,         <span class="sql-c">-- "meeting-oct7-transcript"</span>
+  chunk_text <span class="sql-v">TEXT</span>,         <span class="sql-c">-- "Bharath said APAC numbers need..."</span>
+  embedding  <span class="sql-v">VECTOR(1536)</span>, <span class="sql-c">-- [0.023, -0.841, 0.112, ...] 1536 numbers</span>
+  metadata   <span class="sql-v">JSONB</span>,        <span class="sql-c">-- {speaker, timestamp, meeting_id}</span>
+  created_at <span class="sql-v">TIMESTAMP</span>
+);
+<span class="sql-c">-- One PostgreSQL database. Two superpowers. All data in one place.</span></div>
+
+      <div class="dd-diagram-title" style="margin-top:12px">Debug Mode &mdash; Trace a Query Through the System</div>
+      <div class="debug-box">
+<span class="db-label">[DEBUG]</span> <span class="db-time">14:32:01</span> <span class="db-info">QUERY</span> "what did Bharath commit to?"
+<span class="db-label">[DEBUG]</span> <span class="db-time">14:32:01</span> <span class="db-info">EMBED</span> text &rarr; vector [0.023, -0.841, 0.112, ...] (1536 dims)
+<span class="db-label">[DEBUG]</span> <span class="db-time">14:32:01</span> <span class="db-data">PGVEC</span> searching 1,247 chunks... found 3 matches (97%, 89%, 72%)
+<span class="db-label">[DEBUG]</span> <span class="db-time">14:32:02</span> <span class="db-data">GRAPH</span> entity lookup: Bharath &rarr; 4 relationships, 2 action items
+<span class="db-label">[DEBUG]</span> <span class="db-time">14:32:02</span> <span class="db-ok">MERGE</span> combining vector results + graph context
+<span class="db-label">[DEBUG]</span> <span class="db-time">14:32:02</span> <span class="db-ok">DONE</span> 2 commitments found, confidence: 0.94, latency: 340ms</div>
+    </div>
+  </div>
+  <div class="insight-bar" style="margin-top:12px"><strong>Key idea:</strong> Cognee gives structure (who/what/when). pgvector gives search (find anything by meaning). Together they form a memory that grows smarter with every meeting, every conversation, every interaction.</div>
+</div>
+
+<!-- ========== SCENE 11: VOICE PIPELINE ========== -->
+<div class="scene" data-scene="11">
+  <div class="scene-title"><span class="st-num">Deep Dive</span> Voice Pipeline &mdash; STT, TTS &amp; Costs</div>
+  <div class="dd-layout">
+    <div class="dd-info">
+      <div class="dd-card" style="border-color:var(--accent2)">
+        <h4 style="color:var(--accent2)">Speech-to-Text (STT) &mdash; FREE</h4>
+        <div style="display:flex;gap:6px;margin:6px 0"><span class="dd-badge oss">APPLE BUILT-IN</span><span class="dd-badge free">$0 COST</span></div>
+        <p>Uses Apple's <strong style="color:var(--text)">on-device SFSpeechRecognizer</strong>. Runs entirely on the iPhone &mdash; no API call, no server cost, works offline for short phrases. 60+ languages supported.</p>
+      </div>
+      <div class="dd-card" style="border-color:var(--accent)">
+        <h4 style="color:var(--accent)">Text-to-Speech (TTS) &mdash; PAID</h4>
+        <p>Converts Jarvis's text response into a natural-sounding voice that plays on the iPhone speaker. This is the only voice component that costs money.</p>
+      </div>
+      <div class="dd-card" style="border-color:var(--warn)">
+        <h4 style="color:var(--warn)">Voice Customization</h4>
+        <p>We choose the voice: <strong style="color:var(--text)">male or female</strong>, accent (US, UK, Indian English, etc.), speaking speed. The voice stays consistent &mdash; Jarvis always sounds the same. Can change anytime without code changes.</p>
+      </div>
+      <div class="dd-card">
+        <h4>Cost estimate</h4>
+        <p>200 voice interactions/day &times; ~100 chars = <strong style="color:var(--text)">20K chars/day</strong><br>
+        Monthly: ~600K chars = <strong style="color:var(--accent2)">~$2.40/month</strong> with Polly<br>
+        Even heavy usage stays under <strong style="color:var(--accent2)">$5/month</strong> per user.</p>
+      </div>
+    </div>
+    <div class="dd-diagram">
+      <div class="dd-diagram-title">TTS Options Comparison</div>
+      <table class="voice-tbl" style="margin-top:8px">
+        <thead><tr><th>Service</th><th>Type</th><th>Cost</th><th>Quality</th><th>Latency</th></tr></thead>
+        <tbody>
+          <tr class="pick"><td>Amazon Polly (Recommended)</td><td>Managed (AWS)</td><td>$4 / 1M chars</td><td>Natural (neural)</td><td>Very low</td></tr>
+          <tr><td>OpenAI TTS</td><td>API</td><td>$15 / 1M chars</td><td>Very natural</td><td>Low</td></tr>
+          <tr><td>ElevenLabs</td><td>API</td><td>$5&ndash;$22/month</td><td>Most natural + voice cloning</td><td>Medium</td></tr>
+          <tr><td>Coqui / Piper</td><td>Open source</td><td>Free (self-host)</td><td>Acceptable</td><td>Needs GPU</td></tr>
+          <tr><td>Apple AVSpeech</td><td>On-device</td><td>Free</td><td>Robotic</td><td>Instant</td></tr>
+        </tbody>
+      </table>
+
+      <div class="dd-diagram-title" style="margin-top:20px">Voice Flow Diagram</div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center">
+        <div class="flow-box hi2" style="border-width:2px">
+          <strong>User speaks</strong>
+          <small>iPhone microphone</small>
+        </div>
+        <div class="tarrow">&rarr;</div>
+        <div class="flow-box hi2">
+          <strong>Apple STT</strong>
+          <small style="color:var(--accent2)">FREE &bull; On-device</small>
+          <small>Voice &rarr; text</small>
+        </div>
+        <div class="tarrow">&rarr;</div>
+        <div class="flow-box hi">
+          <strong>Backend</strong>
+          <small>Text processing</small>
+          <small>LangGraph + Agents</small>
+        </div>
+        <div class="tarrow">&rarr;</div>
+        <div class="flow-box hiw">
+          <strong>Amazon Polly</strong>
+          <small style="color:var(--warn)">~$2.40/mo</small>
+          <small>Text &rarr; voice</small>
+        </div>
+        <div class="tarrow">&rarr;</div>
+        <div class="flow-box hi2" style="border-width:2px">
+          <strong>iPhone speaker</strong>
+          <small>Streams as it generates</small>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;padding:12px;background:var(--bg);border:1px solid var(--accent2);border-radius:8px;font-size:12px;text-align:center">
+        <strong style="color:var(--accent2)">Why Amazon Polly for v1?</strong><br>
+        <span style="color:var(--text2)">Cheapest for the quality. Lowest latency (same AWS region as our backend). 20+ neural voices. Can upgrade to ElevenLabs later for voice cloning if needed.</span>
+      </div>
+    </div>
+  </div>
+  <div class="insight-bar" style="margin-top:12px"><strong>Cost summary:</strong> STT is free (Apple). TTS costs ~$2.40/month per user (Amazon Polly). Total voice cost for 10 users: ~$24/month.</div>
+</div>
+
+<!-- ========== SCENE 12: END-TO-END FLOW ========== -->
+<div class="scene" data-scene="12">
+  <div class="scene-title"><span class="st-num">Complete Flow</span> "When is my next meeting that was discussed last Friday?"</div>
+  <div style="display:flex;flex-direction:column;flex:1;gap:4px;overflow-y:auto;padding-top:4px">
+    <div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:8px">Tracing a real query through every system &mdash; voice in to voice out</div>
+
+    <div class="e2e-flow">
+      <div class="e2e-step e2e-row">
+        <div class="e2e-num" style="background:var(--accent2);color:#000">1</div>
+        <div class="e2e-box" style="border-color:var(--accent2)"><div><strong>iPhone Microphone</strong><br><small>User taps mic button and speaks: "When is my next meeting that was discussed last Friday?"</small></div><div class="e2e-time" style="color:var(--accent2)">0 ms</div></div>
+      </div>
+      <div class="e2e-step e2e-arrow">&#9660;</div>
+
+      <div class="e2e-step e2e-row">
+        <div class="e2e-num" style="background:var(--accent2);color:#000">2</div>
+        <div class="e2e-box" style="border-color:var(--accent2)"><div><strong>Apple STT (On-Device)</strong><br><small>Converts voice to text on the iPhone. No server call. <strong style="color:var(--accent2)">FREE.</strong></small></div><div class="e2e-time" style="color:var(--accent2)">200 ms</div></div>
+      </div>
+      <div class="e2e-step e2e-arrow">&#9660;</div>
+
+      <div class="e2e-step e2e-row">
+        <div class="e2e-num" style="background:var(--accent);color:#000">3</div>
+        <div class="e2e-box" style="border-color:var(--accent)"><div><strong>WebSocket &rarr; FastAPI Backend</strong><br><small>Text sent over encrypted WebSocket to Python backend on AWS.</small></div><div class="e2e-time" style="color:var(--accent)">280 ms</div></div>
+      </div>
+      <div class="e2e-step e2e-arrow">&#9660;</div>
+
+      <div class="e2e-step e2e-row">
+        <div class="e2e-num" style="background:var(--accent);color:#000">4</div>
+        <div class="e2e-box" style="border-color:var(--accent)"><div><strong>LangGraph Supervisor</strong><br><small>Analyzes intent: needs <strong>Calendar</strong> (next meeting) AND <strong>Memory</strong> (last Friday's context). Routes to BOTH agents in parallel.</small></div><div class="e2e-time" style="color:var(--accent)">400 ms</div></div>
+      </div>
+      <div class="e2e-step e2e-arrow">&#9660; parallel execution</div>
+
+      <div class="e2e-step e2e-row">
+        <div class="e2e-num" style="background:var(--warn);color:#000">5</div>
+        <div style="display:flex;gap:8px;flex:1">
+          <div class="e2e-box" style="border-color:var(--accent);flex:1"><div><strong style="color:var(--accent)">Calendar Agent</strong><br><small>GET /me/calendar/events<br>&rarr; Graph API &rarr; finds next meeting:<br><strong>"Project Delta, 3 PM, Bharath + Anupama"</strong></small></div></div>
+          <div class="e2e-box" style="border-color:var(--purple);flex:1"><div><strong style="color:var(--purple)">Memory Agent</strong><br><small>pgvector: search "discussed last Friday"<br>Cognee: entity lookup "Project Delta"<br>&rarr; <strong>"Q4 timeline debate, Bharath owes estimate"</strong></small></div></div>
+        </div>
+        <div class="e2e-time" style="color:var(--warn)">900 ms</div>
+      </div>
+      <div class="e2e-step e2e-arrow">&#9660; results merge</div>
+
+      <div class="e2e-step e2e-row">
+        <div class="e2e-num" style="background:var(--purple);color:#fff">6</div>
+        <div class="e2e-box" style="border-color:var(--purple)"><div><strong>LLM Composes Answer</strong><br><small>Merges calendar data + memory context into a natural spoken answer. Skill "voice-style" ensures concise delivery.</small></div><div class="e2e-time" style="color:var(--purple)">1200 ms</div></div>
+      </div>
+      <div class="e2e-step e2e-arrow">&#9660;</div>
+
+      <div class="e2e-step e2e-row">
+        <div class="e2e-num" style="background:var(--warn);color:#000">7</div>
+        <div class="e2e-box" style="border-color:var(--warn)"><div><strong>Amazon Polly TTS (Streaming)</strong><br><small>Converts text to speech. Starts playing while still generating &mdash; no wait for full response. <strong style="color:var(--warn)">~$0.00004 per response.</strong></small></div><div class="e2e-time" style="color:var(--warn)">1400 ms</div></div>
+      </div>
+      <div class="e2e-step e2e-arrow">&#9660;</div>
+
+      <div class="e2e-step e2e-row">
+        <div class="e2e-num" style="background:var(--accent2);color:#000">8</div>
+        <div class="e2e-box" style="border-color:var(--accent2);border-width:2px"><div><strong style="color:var(--accent2)">iPhone Speaker</strong><br><small>"Your next meeting is <strong>Project Delta at 3 PM</strong> with Bharath and Anupama. Last Friday you discussed the <strong>Q4 timeline</strong> &mdash; Bharath disagreed on the launch date and owes a revised estimate by Friday. Two action items are still open."</small></div><div class="e2e-time" style="color:var(--accent2)">1.8 sec</div></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:12px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+      <div style="padding:10px 16px;background:var(--card);border:1px solid var(--accent2);border-radius:8px;text-align:center;font-size:12px">
+        <div style="font-size:20px;font-weight:800;color:var(--accent2)">1.8 sec</div>
+        <div style="color:var(--text2)">Total latency</div>
+      </div>
+      <div style="padding:10px 16px;background:var(--card);border:1px solid var(--accent);border-radius:8px;text-align:center;font-size:12px">
+        <div style="font-size:20px;font-weight:800;color:var(--accent)">2 agents</div>
+        <div style="color:var(--text2)">Running in parallel</div>
+      </div>
+      <div style="padding:10px 16px;background:var(--card);border:1px solid var(--purple);border-radius:8px;text-align:center;font-size:12px">
+        <div style="font-size:20px;font-weight:800;color:var(--purple)">3 systems</div>
+        <div style="color:var(--text2)">Graph API + Cognee + pgvector</div>
+      </div>
+      <div style="padding:10px 16px;background:var(--card);border:1px solid var(--warn);border-radius:8px;text-align:center;font-size:12px">
+        <div style="font-size:20px;font-weight:800;color:var(--warn)">$0.00004</div>
+        <div style="color:var(--text2)">Cost per interaction</div>
+      </div>
+    </div>
+  </div>
+  <div class="insight-bar"><strong>The full picture:</strong> Voice &rarr; Apple STT (free) &rarr; LangGraph routes to Calendar + Memory in parallel &rarr; LLM composes &rarr; Polly speaks &rarr; 1.8 seconds, under $0.001 per query.</div>
+</div>
+
+<!-- ========== SCENE 13: SUMMARY ========== -->
+<div class="scene" data-scene="13">
+  <div class="scene-title"><span class="st-num">Summary</span> Why This Approach &mdash; Delivery in 1 Week</div>
+  <div style="display:flex;flex-direction:column;flex:1;gap:16px;overflow-y:auto">
+    <div class="quadrants">
+      <div class="quad-card" style="border-left:3px solid var(--accent2)">
+        <h4><span style="font-size:20px">&#128274;</span> Is it secure?</h4>
+        <p>EU data residency (Frankfurt). Encryption at rest and in transit. Per-agent least privilege &mdash; each agent can only access what it needs. Agent council verifies every external action. Full audit log. No content in logs. GDPR-ready from day one.</p>
+      </div>
+      <div class="quad-card" style="border-left:3px solid var(--accent)">
+        <h4><span style="font-size:20px">&#10003;</span> Is it feasible?</h4>
+        <p>Every component is proven open-source: LangGraph (MIT), Cognee (Apache 2.0), pgvector (free), FastAPI (MIT). We assemble battle-tested components &mdash; we do not invent new technology.</p>
+      </div>
+      <div class="quad-card" style="border-left:3px solid var(--danger)">
+        <h4><span style="font-size:20px">&#10007;</span> Why not use Copilot?</h4>
+        <p><strong style="color:var(--text)">Copilot is a chat window. Jarvis is an autonomous system.</strong><br><br>Copilot cannot: run background agents, auto-summarize meetings, schedule follow-ups, verify actions with a multi-model council, build a private second brain, or learn the user's preferences over time. Different category entirely.</p>
+      </div>
+      <div class="quad-card" style="border-left:3px solid var(--accent)">
+        <h4><span style="font-size:20px">&#128197;</span> Delivery: 1 Week</h4>
+        <p><strong style="color:var(--accent)">Working prototype in 1 week.</strong><br><br>
+        Day 1&ndash;2: Voice pipeline + calendar Q&amp;A<br>
+        Day 3: Scheduling with clarification<br>
+        Day 4: Meeting scribe + agent council<br>
+        Day 5: Integration testing + demo<br><br>
+        Team: 3 engineers + AI coding assistants</p>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:8px;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:800px;margin-left:auto;margin-right:auto">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">All components are open-source and free. Every tool is listed with its GitHub URL in the deep-dive slides.</div>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:12px">
+        <div class="flow-box hi2" style="font-size:11px">LangGraph<br><small>MIT &bull; Free</small></div>
+        <div class="flow-box hip" style="font-size:11px">Cognee<br><small>Apache 2.0 &bull; Free</small></div>
+        <div class="flow-box hi" style="font-size:11px">pgvector<br><small>PostgreSQL &bull; Free</small></div>
+        <div class="flow-box hiw" style="font-size:11px">FastAPI<br><small>MIT &bull; Free</small></div>
+        <div class="flow-box" style="font-size:11px">MS Graph SDK<br><small>MIT &bull; Free</small></div>
+      </div>
+    </div>
+  </div>
+  <div class="insight-bar"><strong>Next step:</strong> 1-week prototype. Voice + Calendar + Meeting Summaries + Agent Council. A working demo, not a slide deck.</div>
+</div>
+
+<script>
+const scenes = document.querySelectorAll('.scene');
+const total = scenes.length;
+let current = 0;
+let animating = false;
+
+const progress = document.getElementById('progress');
+for (let i = 0; i < total; i++) {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => goTo(i));
+  progress.appendChild(d);
+}
+const dots = document.querySelectorAll('.dot');
+const counter = document.getElementById('counter');
+
+function goTo(n) {
+  if (n < 0 || n >= total || n === current || animating) return;
+  animating = true;
+  const dir = n > current ? 1 : -1;
+  const oldIdx = current;
+
+  // Position new scene at the correct entry side (no transition)
+  scenes[n].style.transition = 'none';
+  scenes[n].classList.remove('active', 'exit-left', 'exit-right');
+  scenes[n].style.transform = dir > 0 ? 'translateX(60px)' : 'translateX(-60px)';
+  scenes[n].style.opacity = '0';
+  scenes[n].offsetHeight; // force reflow
+
+  // Animate old scene out
+  scenes[oldIdx].classList.remove('active');
+  scenes[oldIdx].classList.add(dir > 0 ? 'exit-left' : 'exit-right');
+
+  // Animate new scene in
+  scenes[n].style.transition = '';
+  scenes[n].style.transform = '';
+  scenes[n].style.opacity = '';
+  scenes[n].classList.add('active');
+
+  current = n;
+  dots.forEach((d, i) => d.classList.toggle('active', i === current));
+  counter.textContent = (current + 1) + ' / ' + total;
+
+  setTimeout(() => {
+    scenes[oldIdx].classList.remove('exit-left', 'exit-right');
+    animating = false;
+  }, 500);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goTo(current + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(current - 1); }
+});
+
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 50) goTo(current + (dx < 0 ? 1 : -1));
+});
+</script>
+</body>
+</html>

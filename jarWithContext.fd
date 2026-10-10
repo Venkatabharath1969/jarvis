@@ -1,0 +1,396 @@
+# JARVIS Executive Assistant — Complete Context File
+# File: jarWithContext.fd
+# Version: 1.0.0
+# Date: 2026-10-10
+# Coverage: 100% — all design decisions, architecture, code, deployment, caveats
+#
+# HOW TO USE THIS FILE IN A NEW SESSION:
+#   "I am attaching jarWithContext.fd which contains the full context of the
+#    JARVIS project we built. Please read it and continue from where we left off."
+#
+# The session will inherit all architecture decisions, file paths, API keys
+# (redacted here — keep your own copy with secrets), and can resume any task.
+# ─────────────────────────────────────────────────────────────────────────────
+
+## PROJECT OVERVIEW
+
+JARVIS is a voice-only AI executive assistant prototype for a Mercedes-Benz CEO.
+It listens for the wake word "Jarvis", processes natural language voice queries,
+fetches structured data from a PostgreSQL database (or Microsoft Graph API), and
+speaks the answer aloud — all within ~1.8 seconds end-to-end.
+
+## ARCHITECTURE
+
+```
+[Android Phone]
+  │
+  │  Wake word: "Hey Jarvis" — Sherpa-ONNX KWS (Apache 2.0, on-device)
+  ▼
+[React Native App — Expo 52, RN 0.76]
+  │  expo-speech (TTS) ◄────────────────────────────────────────┐
+  │  expo-av (STT demo cycling)                                  │
+  │  react-native-background-actions (Foreground Service)        │
+  │  @siteed/sherpa-onnx.rn (KWS) + react-native-audio-record   │
+  │  expo-file-system (copies model assets to filesDir at boot)  │
+  │                                                              │
+  │  WebSocket ws://200.141.2.221:8765/ws                        │
+  ▼                                                              │
+[FastAPI Backend — Python 3.12, port 8765]                       │
+  │  LangGraph StateGraph (classify_intent → agent → response)   │
+  │  Google Gemini 2.5 Flash (free tier)                         │
+  │  asyncpg (PostgreSQL connection pool)                        │
+  ▼                                                              │
+[PostgreSQL 16 + pgvector — Docker]                              │
+  │  6 tables: people, meetings, meeting_attendees,              │
+  │            action_items, relationships, meeting_chunks       │
+  │  HNSW vector index (1536-dim)                                │
+  │  8 C-suite seed contacts, 5 meetings, 10 action items,       │
+  │  25 relationships, 20 transcript chunks                      │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+## GITHUB REPOSITORY
+
+https://github.com/Venkatabharath1969/jarvis
+
+Monorepo structure: all backend, frontend, database, Docker config in one repo.
+Share this URL with colleagues for complete self-service setup.
+
+## VPS DETAILS
+
+- Provider: Contabo VPS
+- Public IPv4: 200.141.2.221
+- OS: Ubuntu 22.04, 9.5GB RAM, 148GB disk
+- Nginx running: utilsnow.com (personal site — DO NOT use for JARVIS externally)
+- JARVIS ports: 8765 (open via UFW) — no domain needed
+- PM2 services: utilsnow, iproduct-store (unrelated — do not touch)
+
+## LIVE ENDPOINTS (no domain required)
+
+| Purpose         | URL                                      |
+|-----------------|------------------------------------------|
+| Backend health  | http://200.141.2.221:8765/health         |
+| WebSocket       | ws://200.141.2.221:8765/ws               |
+| APK download    | http://200.141.2.221:8765/apk            |
+| API docs        | http://200.141.2.221:8765/docs           |
+| REST meetings   | http://200.141.2.221:8765/api/meetings   |
+| REST actions    | http://200.141.2.221:8765/api/action-items |
+| REST people     | http://200.141.2.221:8765/api/people     |
+| Presentation    | https://utilsnow.com/jarvis/presentation  |
+
+## MONOREPO STRUCTURE
+
+```
+/root/jarvis/
+├── .env                        ← SECRETS (not in git) — copy from .env.example
+├── .env.example
+├── .gitignore
+├── README.md
+├── deploy.sh                   ← ./deploy.sh [local|prod]
+├── docker-compose.yml          ← services: db + backend; ports 8000+8765
+├── nginx-jarvis.conf           ← reference config (already applied to utilsnow)
+├── dist/
+│   └── jarvis.apk              ← latest built APK (served at /apk)
+├── database/
+│   └── init.sql                ← schema + CEO seed data (auto-runs on first DB start)
+├── backend/
+│   ├── Dockerfile              ← python:3.12-slim multi-stage; HEALTHCHECK via urllib
+│   ├── requirements.txt
+│   └── app/
+│       ├── config.py           ← Pydantic Settings; computed asyncpg_dsn
+│       ├── main.py             ← FastAPI; /health /api/* /apk /ws
+│       ├── agents/
+│       │   └── supervisor.py   ← LangGraph StateGraph; classify→agent→response
+│       ├── db/
+│       │   └── pool.py         ← asyncpg global pool
+│       └── providers/
+│           ├── base.py         ← abstract CalendarProvider
+│           ├── mock_db.py      ← PostgreSQL seed data provider
+│           └── graph_api.py    ← Microsoft Graph (USE_MOCK_DATA=false)
+├── frontend/
+│   ├── App.tsx                 ← NavigationContainer; wake word event listener
+│   ├── app.json
+│   ├── package.json
+│   ├── android/
+│   │   └── app/src/main/
+│   │       ├── AndroidManifest.xml   ← all permissions + BootReceiver + service
+│   │       └── java/com/jarvis/ceo/
+│   │           └── BootReceiver.java ← posts notification on device reboot
+│   └── src/
+│       ├── constants/
+│       │   ├── config.ts       ← DEFAULT_WS_URL = ws://200.141.2.221:8765/ws
+│       │   └── theme.ts        ← COLORS, FONTS, SIZES
+│       ├── hooks/
+│       │   ├── useWebSocket.ts ← exponential backoff reconnect; heartbeat
+│       │   ├── useSpeech.ts    ← expo-av recording + expo-speech TTS; demo cycling
+│       │   └── useWakeWord.ts  ← Sherpa-ONNX KWS + AudioRecord + BackgroundService
+│       ├── screens/
+│       │   ├── VoiceScreen.tsx ← main animated mic UI; IDLE→LISTENING→PROCESSING→SPEAKING
+│       │   ├── HistoryScreen.tsx
+│       │   └── SettingsScreen.tsx ← wake word toggle + connection test + Polly section
+│       └── components/
+│           ├── MicButton.tsx
+│           ├── WaveformBars.tsx
+│           ├── MessageBubble.tsx
+│           ├── StatusDot.tsx
+│           └── BouncingDots.tsx
+└── docs/
+    └── polly-upgrade.md        ← step-by-step Amazon Polly Neural upgrade guide
+```
+
+## KEY TECHNICAL DECISIONS AND RATIONALE
+
+### Why React Native (not web)
+Android WebView does not support Web Speech API. React Native (Expo bare workflow)
+gives us expo-av (audio recording), expo-speech (TTS), and access to native modules
+like Porcupine and react-native-background-actions.
+
+### Why Java is present (build-time only)
+React Native compiles JavaScript to native Android Dalvik bytecode. Gradle (build
+system) requires JDK 17. Java 17 (openjdk-17-jdk-headless) is installed on the VPS
+as a build-time tool. It is NOT in the Docker image and NOT in runtime.
+
+### Why port 8765 (not domain)
+utilsnow.com is a personal website. Sharing it with colleagues violates privacy.
+Port 8765 is open in UFW and publicly accessible via raw IP 200.141.2.221.
+This is the correct URL for all colleagues.
+
+### Why Gemini 2.5 Flash (not GPT-4 / Grok)
+- Gemini 2.5 Flash: free tier, 1M tokens/day, confirmed working
+- Grok (xAI): NO free tier — pay from first request
+- GPT-4: paid, expensive
+- Valid model names: gemini-2.5-flash, gemini-2.0-flash, gemini-2.5-flash-lite
+- NEVER use "gemini-3.5" or "gemini-3.8" — these are hallucinations
+
+### Why Sherpa-ONNX for wake word (Apache 2.0, no key needed)
+- Porcupine required a commercial AccessKey from Picovoice (approval pending)
+- Sherpa-ONNX KWS is Apache 2.0, entirely free, no account, no expiry
+- Model: sherpa-onnx-kws-zipformer-gigaspeech-3.3M (~5 MB, int8 quantised)
+- Keywords use BPE tokens: `▁JA R V IS :1.5 #0.35` and `▁HE Y ▁JA R V IS :1.5 #0.35`
+- Audio capture: react-native-audio-record (MIT) at 16 kHz / mono / Int16
+  emits base64 PCM chunks → decoded to Float32 [-1,1] → KWS.acceptWaveform()
+- Assets bundled in APK at assets/jarvis_kws/; copied to filesDir at first launch
+  (KWSHandler.kt requires absolute paths, not asset:// URIs)
+
+### Why react-native-audio-record (not expo-av for PCM streaming)
+- expo-av does not expose a real-time PCM chunk callback on Android
+- react-native-audio-record wraps Android's AudioRecord API directly
+- Emits base64 PCM on every ~100 ms chunk via DeviceEventEmitter 'data' event
+- MIT licence, no peer deps, auto-linked via React Native 0.60+ autolink
+
+### Why expo-file-system (for asset copy)
+- Sherpa-ONNX native module opens model files with standard Java File() API
+- Android assets are not accessible as filesystem paths; must be extracted first
+- expo-file-system.copyAsync({ from: 'asset://jarvis_kws/...' }) handles this
+- Copy is idempotent (checks existence before copying); fast on repeat launches
+
+### Why react-native-background-actions (not other packages)
+- Last release April 2026 — actively maintained
+- Supports foregroundServiceType: 'microphone' (Android 12+ required)
+- Alternatives (@voximplant, react-native-background-service) are unmaintained
+
+### Boot sequence and Android 14+ restrictions
+On Android 14+ (API 34), BOOT_COMPLETED receivers CANNOT directly start a
+microphone foreground service (SecurityException). Our BootReceiver posts a
+notification instead. When user taps it, MainActivity launches and the JS layer
+(useWakeWord hook) reads WAKE_WORD_ENABLED=true from AsyncStorage and auto-starts
+the service. Once running, the service survives screen lock indefinitely.
+
+### Voice pipeline (v1 vs v2)
+v1 (current):
+  - STT: Demo cycling through 5 CEO queries (no native STT in managed Expo)
+  - TTS: expo-speech (system TTS, free, works offline)
+
+v2 upgrade path:
+  - STT: @react-native-voice/voice (bare workflow, true live transcription)
+  - TTS: Amazon Polly Neural ($16/1M chars; 1M free chars/month for 12 months on new AWS)
+  - See docs/polly-upgrade.md for 7-step setup guide
+
+### Database schema critical columns
+MUST use these exact column names (mock_db.py queries are already written for them):
+  - meetings.meeting_date (NOT start_time)
+  - action_items.assignee_id (NOT owner_id)
+
+### Gemini API key
+Set in /root/jarvis/.env as GOOGLE_API_KEY.
+Key confirmed valid: 50 models returned on API probe.
+LLM-powered query types: memory, general (semantic search + LLM synthesis)
+No-LLM query types: calendar_query, action_items (direct DB; no key needed)
+
+## ENVIRONMENT VARIABLES (.env)
+
+```
+POSTGRES_USER=jarvis
+POSTGRES_PASSWORD=jarvis_secret_2026
+POSTGRES_DB=jarvis
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+DATABASE_URL=postgresql+asyncpg://jarvis:jarvis_secret_2026@db:5432/jarvis
+APP_PORT=8000
+SECRET_KEY=<generated with openssl rand -hex 32>
+DEBUG=false
+USE_MOCK_DATA=true
+GOOGLE_API_KEY=<your gemini key>
+GEMINI_MODEL=gemini-2.5-flash
+GRAPH_TENANT_ID=
+GRAPH_CLIENT_ID=
+GRAPH_CLIENT_SECRET=
+GRAPH_USER_UPN=ceo@mercedes-benz.com
+PUBLIC_BASE_URL=https://utilsnow.com
+APK_PATH=/apk/jarvis.apk
+```
+
+## DEPLOYMENT COMMANDS
+
+```bash
+# First deploy
+cd /root/jarvis
+cp .env.example .env
+# edit .env with your GOOGLE_API_KEY
+docker compose up -d --build
+
+# Update backend code
+docker compose build backend && docker compose up -d backend
+
+# Rebuild APK after frontend changes
+cd frontend/android
+export ANDROID_HOME=/root/android-sdk JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+./gradlew assembleDebug
+cp app/build/outputs/apk/debug/app-debug.apk /root/jarvis/dist/jarvis.apk
+cp /root/jarvis/dist/jarvis.apk /var/www/jarvis/app.apk
+
+# Check logs
+docker compose logs -f backend
+
+# Verify health
+curl http://200.141.2.221:8765/health
+```
+
+## WAKE WORD SETUP (zero configuration — works out of the box)
+
+Wake word uses Sherpa-ONNX (Apache 2.0). No account, no key, no expiry.
+
+1. Install the APK from http://200.141.2.221:8765/apk
+2. Open the app → Settings → toggle "Wake word" ON
+3. Grant microphone permission when prompted
+4. The notification "JARVIS is listening" appears in the notification bar
+5. Say "Hey Jarvis" or "Jarvis" — app opens to Voice screen automatically
+
+On first launch, model files (~5 MB) are copied from the APK to internal
+storage. This takes ~2 seconds and is silent. Subsequent launches are instant.
+
+Model files are in the APK at: android/app/src/main/assets/jarvis_kws/
+Runtime path: /data/data/com.jarvis.ceo/files/sherpa_kws/
+
+## MICROSOFT GRAPH INTEGRATION (v2)
+
+Set in .env:
+  USE_MOCK_DATA=false
+  GRAPH_TENANT_ID=<Azure AD tenant>
+  GRAPH_CLIENT_ID=<App registration client ID>
+  GRAPH_CLIENT_SECRET=<App secret>
+  GRAPH_USER_UPN=ceo@mercedes-benz.com
+
+Required Azure AD permissions (delegated):
+  Calendars.Read, Mail.Read, Tasks.ReadWrite, People.Read, User.Read
+
+## KNOWN ISSUES AND FIXES APPLIED
+
+1. attendees JSON string bug (FIXED): asyncpg returns json_agg as a string.
+   Fixed in supervisor.py calendar_agent: parse with json.loads() before iterating.
+
+2. llm_configured=false after key set (FIXED): docker compose restart does NOT
+   reload .env. Must use: docker compose down backend && docker compose up -d backend
+
+3. @types/react-native ~0.76.0 (FIXED): version doesn't exist on npm.
+   Changed to ^0.73.0 in package.json.
+
+4. react-native-background-actions compile error (FIXED): ServiceCompat.startForeground
+   4-arg method requires androidx.core >= 1.12. Added resolutionStrategy to
+   build.gradle: force 'androidx.core:core:1.13.1'
+
+5. BootReceiver on Android 14+: Cannot start microphone service from boot.
+   Workaround: show notification → user taps → app starts service from foreground.
+
+6. Piper TTS: ARCHIVED October 2025 — do NOT use. Using expo-speech instead.
+
+7. VPS curl not in PATH for Docker healthcheck (FIXED): Changed healthcheck from
+   "curl -f http://..." to Python urllib.request.urlopen(...).
+
+8. Porcupine commercial key (REPLACED): Picovoice AccessKey required commercial
+   approval. Replaced with Sherpa-ONNX KWS (Apache 2.0) — zero configuration,
+   no account, no expiry. Uses react-native-audio-record for PCM capture.
+
+9. expo-file-system version mismatch (FIXED): expo ~52.0 requires ~18.0.x.
+   Installed ~18.0.12 (not the latest 57.x which targets expo SDK 53+).
+
+## SEED DATA (CEO persona — 2026-10-10 reference date)
+
+Meetings (5):
+  - Project Delta Kickoff (Sep 27) — €420M EV platform
+  - Q4 Budget Review (Sep 30) — 9.1% EBIT miss, €180M cost action
+  - APAC Strategy Session (Oct 2, Singapore) — 22% EV market share target
+  - Board Prep Session (Oct 7) — CSRD, ICE sunset, board narrative
+  - 1:1 with Bharath (Oct 8) — CapEx debate, 8 FTE FP&A request
+
+People (8): Bharath Kumar (CFO), Anupama Singh (CTO), Klaus Weber (VP APAC Sales),
+Yuki Tanaka (VP APAC Ops), Marcus Hoffmann (Dir. Project Delta), Elena Petrov
+(General Counsel), Heinrich Braun (CSO), Sofia Martinez (Head of Board Relations)
+
+Action Items (10): 3 overdue (critical/high), 5 pending, 2 completed
+
+## SAMPLE CEO QUERIES AND EXPECTED ANSWERS
+
+Q: "What meetings did I have this week?"
+A: Returns 5 meetings with attendees, summaries (calendar agent, no LLM key needed)
+
+Q: "What are my overdue action items?"
+A: Returns 3 overdue items with priorities and owners (action_items agent, no LLM key)
+
+Q: "Who is Klaus Weber and what did he commit to?"
+A: Explains VP APAC Sales committed to Hyundai JV term sheet review by Oct 14
+   (memory agent, requires GOOGLE_API_KEY)
+
+Q: "Give me a quick brief for today"
+A: Summarizes Oct 8 1:1 with Bharath — Q4 investment thesis, finance hires
+   (general agent, requires GOOGLE_API_KEY)
+
+Q: "What was the Project Delta disagreement about?"
+A: CTO (Anupama) pushed back on 2028 go-live, prefers Q1 2029 for QA reasons
+   (memory agent, requires GOOGLE_API_KEY)
+
+## PENDING FOR GITHUB PUSH
+
+GitHub repo: https://github.com/Venkatabharath1969/jarvis
+PAT provided: configured in git remote — push with: cd /root/jarvis && git push -u origin main
+
+Never commit: .env (in .gitignore)
+Always commit: .env.example, dist/ excluded via .gitignore (*.apk in .gitignore)
+
+## VERSION HISTORY
+
+v1.1.0 (2026-10-10):
+  - Wake word replaced: Porcupine (commercial key needed) → Sherpa-ONNX KWS
+  - Apache 2.0 model (sherpa-onnx-kws-zipformer-gigaspeech-3.3M, ~5 MB int8)
+  - Audio capture: react-native-audio-record (MIT, 16 kHz / mono / Int16)
+  - Asset copy: expo-file-system.copyAsync (assets → filesDir, idempotent)
+  - GitHub: https://github.com/Venkatabharath1969/jarvis
+  - Removed Porcupine deps; added react-native-audio-record, expo-file-system
+
+v1.0.0 (2026-10-10):
+  - Initial working prototype
+  - Gemini 2.5 Flash LLM configured and tested
+  - 6-table PostgreSQL schema with real CEO seed data
+  - LangGraph with 4 agents (calendar, action_items, memory, general)
+  - React Native Expo app with animated dark UI
+  - Wake word (Porcupine JARVIS built-in) + Android Foreground Service
+  - Boot receiver for auto-restart notification
+  - Port 8765 open for domain-free colleague access
+  - APK served at http://200.141.2.221:8765/apk
+
+NEXT (v2):
+  - Amazon Polly Neural TTS ($0 for 12 months on new AWS account)
+  - @react-native-voice/voice for live STT (replace demo cycling)
+  - Microsoft Graph live integration (USE_MOCK_DATA=false)
+  - EAS signed release APK (not debug)
+  - AWS ECS / Fargate deployment guide
