@@ -1,6 +1,6 @@
-// utilsnow.com — HTTPS/WSS on port 443, works through corporate proxies
-export const DEFAULT_WS_URL = 'wss://utilsnow.com/jarvis/ws';
-export const DEFAULT_HEALTH_URL = 'https://utilsnow.com/jarvis/health';
+// Default server — teammates can override in Settings tab
+export const DEFAULT_WS_URL = 'wss://jarvis.local/ws';
+export const DEFAULT_HEALTH_URL = 'https://jarvis.local/health';
 export const WS_RECONNECT_DELAY = 3000;
 export const WS_HEARTBEAT = 30000;
 export const STORAGE_KEYS = {
@@ -13,5 +13,5 @@ export const STORAGE_KEYS = {
   WAKE_WORD_ENABLED: '@jarvis:wake_word_enabled',
 } as const;
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.3.1';
 export const HEALTH_ENDPOINT_SUFFIX = '/health';

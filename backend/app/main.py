@@ -141,6 +141,13 @@ async def download_apk() -> FileResponse:
     )
 
 
+@app.get("/test", tags=["System"], include_in_schema=False)
+async def test_ui() -> FileResponse:
+    """Browser-based test UI — send text queries and see responses without the mobile app."""
+    html_path = os.path.join(os.path.dirname(__file__), "test_ui.html")
+    return FileResponse(path=html_path, media_type="text/html")
+
+
 # --------------------------------------------------------------------------- #
 # WebSocket endpoint
 # --------------------------------------------------------------------------- #

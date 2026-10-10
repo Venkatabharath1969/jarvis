@@ -73,6 +73,8 @@ def _make_llm() -> ChatGoogleGenerativeAI | None:
         model=settings.GEMINI_MODEL,
         google_api_key=settings.GOOGLE_API_KEY,
         temperature=0.1,
+        max_retries=0,          # fail fast on 429 — don't retry for hours
+        request_timeout=12,     # hard timeout per call
     )
 
 

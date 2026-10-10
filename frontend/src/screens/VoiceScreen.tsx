@@ -186,10 +186,13 @@ const VoiceScreen: React.FC = () => {
 
     addMessage('user', transcript);
     setMicState('processing');
+    startProcessingTimer();        // ← guard: shows timeout error if backend hangs
+
     const sent = sendQuery(transcript);
     if (!sent) {
+      clearProcessingTimer();
       setMicState('idle');
-      addMessage('assistant', 'Connection lost. Please wait for reconnection and try again.');
+      addMessage('assistant', 'Connection lost. Reconnecting — please try again in a moment.');
     }
   }, [micState, connectionStatus, startListening, stopListening, stopSpeaking, addMessage, sendQuery]);
 
