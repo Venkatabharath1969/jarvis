@@ -133,8 +133,23 @@ async def classify_intent(state: JarvisState) -> dict[str, Any]:
         }
         intent = raw if raw in valid else "general"
     except Exception:
-        logger.exception("classify_intent LLM call failed; defaulting to 'general'")
-        intent = "general"
+        logger.warning("classify_intent LLM call failed; falling back to heuristic")
+        # Heuristic fallback so data queries still work when LLM quota is exhausted
+        q_lower = query.lower()
+        if any(w in q_lower for w in ("meeting", "calendar", "schedule", "agenda", "today", "week", "tomorrow")):
+            intent = "calendar_query"
+        elif any(w in q_lower for w in ("action", "task", "todo", "follow-up", "followup", "overdue")):
+            intent = "action_items"
+        elif any(w in q_lower for w in ("remember", "search", "transcript", "what did", "who said", "budget", "review")):
+            intent = "memory_search"
+        elif any(w in q_lower for w in ("free", "available", "availability", "busy", "slot")):
+            intent = "availability_query"
+        elif any(w in q_lower for w in ("email", "inbox", "mail", "unread")):
+            intent = "email_query"
+        elif any(w in q_lower for w in ("book", "create meeting", "set up")):
+            intent = "schedule_meeting"
+        else:
+            intent = "general"
 
     logger.info("classify_intent: '%s' -> %s", query[:60], intent)
     return {"intent": intent}
@@ -257,9 +272,13 @@ async def general_agent(state: JarvisState) -> dict[str, Any]:
     try:
         response = await llm.ainvoke([system, human])
         result = response.content.strip()
-    except Exception:
-        logger.exception("general_agent LLM call failed")
-        result = "I encountered an error processing your request. Please try again."
+    except Exception as exc:
+        logger.warning("general_agent LLM call failed: %s", exc)
+        result = (
+            "I'm unable to reach the AI service right now due to rate limits. "
+            "For calendar, meetings, or action items, please ask specifically — "
+            "those work directly from your database."
+        )
 
     return {"agent_result": result}
 
@@ -300,9 +319,11 @@ async def compose_response(state: JarvisState) -> dict[str, Any]:
     try:
         response = await llm.ainvoke([system, human])
         final = response.content.strip()
-    except Exception:
-        logger.exception("compose_response LLM call failed; returning raw result")
-        final = agent_result
+    except Exception as exc:
+        logger.warning("compose_response LLM call failed: %s; returning structured result", exc)
+        # Strip bullet-point lines into a readable sentence flow
+        lines = [l.strip().lstrip('- ').strip() for l in agent_result.splitlines() if l.strip() and not l.startswith('#')]
+        final = ' '.join(lines[:6])  # first 6 data lines, joined as prose
 
     return {"final_response": final}
 

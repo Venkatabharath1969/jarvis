@@ -1,6 +1,5 @@
-// Default server — teammates can override in Settings tab
-export const DEFAULT_WS_URL = 'wss://jarvis.local/ws';
-export const DEFAULT_HEALTH_URL = 'https://jarvis.local/health';
+export const DEFAULT_WS_URL = 'wss://utilsnow.com/jarvis/ws';
+export const DEFAULT_HEALTH_URL = 'https://utilsnow.com/jarvis/health';
 export const WS_RECONNECT_DELAY = 3000;
 export const WS_HEARTBEAT = 30000;
 export const STORAGE_KEYS = {
