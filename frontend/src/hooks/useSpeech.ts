@@ -1,13 +1,3 @@
-/**
- * useSpeech — voice input/output hook.
- *
- * API change (v1.2.1): startListening now accepts a callback instead of returning
- * a Promise. This eliminates the stale-promise / manual-stop hang that caused the
- * blank-screen bug: when the user taps mic to STOP, stopListening() fires the
- * callback immediately with whatever partial transcript exists, rather than leaving
- * an orphaned Promise that never resolves.
- */
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import * as Speech from 'expo-speech';
 import { Platform, PermissionsAndroid } from 'react-native';
@@ -19,18 +9,24 @@ try {
   // fallback to demo mode if native module not linked
 }
 
-// Demo cycle — used only when native STT is unavailable
+// Fallback demo cycle — used only if native STT is unavailable
 const DEMO_QUERIES = [
   'What are my overdue action items?',
-  'What meetings do I have this week?',
+  'What meetings did I have this week?',
   'Summarise the Q4 budget review.',
   'Who is Klaus Weber and what did he commit to?',
   'What is the latest on Project Delta?',
 ];
 
-export interface UseSpeechReturn {
-  startListening: (onResult: (transcript: string | null) => void) => void;
-  stopListening: () => void;
+interface ListenSession {
+  resolve: (t: string | null) => void;
+  timeout: ReturnType<typeof setTimeout> | null;
+  settled: boolean;
+}
+
+interface UseSpeechReturn {
+  startListening: () => Promise<string | null>;
+  stopListening: () => Promise<void>;
   speak: (text: string) => void;
   stopSpeaking: () => void;
   isSpeaking: boolean;
@@ -40,23 +36,25 @@ export interface UseSpeechReturn {
 export function useSpeech(): UseSpeechReturn {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
-
-  const onResultRef = useRef<((t: string | null) => void) | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const partialRef = useRef<string>('');
   const demoIndexRef = useRef(0);
+  const sessionRef = useRef<ListenSession | null>(null);
+  const partialRef = useRef<string>('');
+  const utteranceIdRef = useRef(0);
+  const ttsWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── single-fire result emitter ────────────────────────────────────────────
-  const fireResult = useCallback((transcript: string | null) => {
-    if (!onResultRef.current) return; // already fired or not started
-    const cb = onResultRef.current;
-    onResultRef.current = null;
-    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+  // Settle the current listen session exactly once (idempotent)
+  const settle = useCallback((t: string | null) => {
+    const s = sessionRef.current;
+    if (!s || s.settled) return;
+    s.settled = true;
+    if (s.timeout) { clearTimeout(s.timeout); }
+    sessionRef.current = null;
     setIsListening(false);
-    cb(transcript);
+    partialRef.current = '';
+    s.resolve(t);
   }, []);
 
-  // ── Voice event wiring ────────────────────────────────────────────────────
+  // Wire up Voice events once on mount
   useEffect(() => {
     if (!Voice) return;
 
@@ -64,21 +62,23 @@ export function useSpeech(): UseSpeechReturn {
       partialRef.current = e.value?.[0] ?? '';
     };
 
+    // FIX: use || not ?? so empty string "" falls back to partial
     Voice.onSpeechResults = (e: any) => {
-      const transcript = e.value?.[0] ?? partialRef.current;
-      if (transcript) fireResult(transcript);
+      const transcript = e.value?.[0] || partialRef.current || null;
+      settle(transcript);
     };
 
-    Voice.onSpeechError = () => {
-      // Let the 10s timeout handle it — never hang the UI
+    // FIX: was completely silent — now settles with partial or null so promise never hangs
+    Voice.onSpeechError = (_e: any) => {
+      settle(partialRef.current || null);
     };
 
     return () => {
+      settle(null); // unblock any pending session on unmount
       Voice.destroy().catch(() => {});
     };
-  }, [fireResult]);
+  }, [settle]);
 
-  // ── Permission ────────────────────────────────────────────────────────────
   const requestMicPermission = useCallback(async (): Promise<boolean> => {
     if (Platform.OS !== 'android') return true;
     const granted = await PermissionsAndroid.request(
@@ -92,83 +92,97 @@ export function useSpeech(): UseSpeechReturn {
     return granted === PermissionsAndroid.RESULTS.GRANTED;
   }, []);
 
-  // ── startListening ────────────────────────────────────────────────────────
-  const startListening = useCallback(async (onResult: (t: string | null) => void) => {
-    // Cancel any in-progress session
-    if (onResultRef.current) {
-      onResultRef.current = null;
-      if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
-      try { if (Voice) await Voice.stop(); } catch { /* ignore */ }
-    }
+  // FIX: now always unblocks startListening() — calls Voice.stop() for native cleanup,
+  // then settles the session with whatever partial transcript we have (or null)
+  const stopListening = useCallback(async (): Promise<void> => {
+    try { if (Voice) await Voice.stop(); } catch {}
+    settle(partialRef.current || null);
+  }, [settle]);
 
+  const startListening = useCallback(async (): Promise<string | null> => {
     const hasPermission = await requestMicPermission();
-    if (!hasPermission) {
-      onResult(null);
-      return;
-    }
+    if (!hasPermission) return null;
 
-    partialRef.current = '';
-    onResultRef.current = onResult;
     setIsListening(true);
+    partialRef.current = '';
 
-    // 10-second hard timeout — always fires so UI never hangs
-    timeoutRef.current = setTimeout(() => {
-      if (!Voice) {
-        // Demo mode: cycle through sample queries
-        const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
-        demoIndexRef.current += 1;
-        fireResult(q);
-      } else {
-        // Nothing recognised — fire with partial or null
-        Voice.stop().catch(() => {});
-        fireResult(partialRef.current || null);
+    return new Promise<string | null>((resolve) => {
+      const timeout = setTimeout(async () => {
+        try { if (Voice) await Voice.stop(); } catch {}
+        if (partialRef.current) { settle(partialRef.current); return; }
+        if (!Voice) {
+          const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
+          demoIndexRef.current += 1;
+          settle(q);
+        } else {
+          settle(null); // real STT but nothing heard
+        }
+      }, 10000);
+
+      sessionRef.current = { resolve, timeout, settled: false };
+
+      if (Voice) {
+        Voice.start('en-US').catch(() => {
+          // Start failed — settle as null, don't fabricate a demo query for real STT failure
+          settle(null);
+        });
       }
-    }, 10000);
+      // No Voice module: timeout fires demo query after 10s
+    });
+  }, [requestMicPermission, settle]);
 
-    if (Voice) {
-      Voice.start('en-US').catch(() => {
-        // STT failed to start — fall back to demo
-        const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
-        demoIndexRef.current += 1;
-        fireResult(q);
-      });
-    }
-    // If no Voice module, wait for the 10s timeout to fire demo query
-  }, [fireResult, requestMicPermission]);
-
-  // ── stopListening — IMMEDIATELY fires the callback ────────────────────────
-  const stopListening = useCallback(() => {
-    if (!onResultRef.current) return; // nothing in progress
-
-    // Capture partial before clearing
-    const partial = partialRef.current;
-
-    // Stop Voice (may trigger onSpeechResults which calls fireResult again —
-    // that's fine: fireResult is single-fire, second call is a no-op)
-    try { if (Voice) Voice.stop().catch(() => {}); } catch { /* ignore */ }
-
-    // Fire immediately with whatever we have so UI never hangs
-    fireResult(partial || null);
-  }, [fireResult]);
-
-  // ── TTS ───────────────────────────────────────────────────────────────────
+  // FIX: utterance-ID guard prevents stale onDone/onStopped from a previous
+  // utterance from calling setIsSpeaking(false) on the current one (Android race)
   const speak = useCallback((text: string) => {
     if (!text.trim()) return;
     Speech.stop();
+    const id = ++utteranceIdRef.current;
     setIsSpeaking(true);
-    Speech.speak(text, {
-      rate: 0.92,
-      pitch: 1.0,
-      language: 'en-US',
-      onDone: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
-      onStopped: () => setIsSpeaking(false),
-    });
+
+    // Watchdog: if callbacks never fire (Android TTS engine crash / no data), clean up
+    if (ttsWatchdogRef.current) clearTimeout(ttsWatchdogRef.current);
+    ttsWatchdogRef.current = setTimeout(
+      () => { if (utteranceIdRef.current === id) setIsSpeaking(false); },
+      Math.min(60000, 2000 + text.length * 70),
+    );
+
+    const done = () => {
+      if (utteranceIdRef.current === id) {
+        if (ttsWatchdogRef.current) { clearTimeout(ttsWatchdogRef.current); ttsWatchdogRef.current = null; }
+        setIsSpeaking(false);
+      }
+    };
+
+    // Android: brief delay lets Speech.stop() complete before new utterance queues
+    const doSpeak = () => {
+      try {
+        Speech.speak(text.slice(0, 3900), { // Android TTS cap ~4000 chars
+          rate: 0.92,
+          pitch: 1.0,
+          language: 'en-US',
+          onDone: done,
+          onError: done,
+          onStopped: done,
+        });
+      } catch {
+        done();
+      }
+    };
+
+    Platform.OS === 'android' ? setTimeout(doSpeak, 50) : doSpeak();
   }, []);
 
   const stopSpeaking = useCallback(() => {
     Speech.stop();
     setIsSpeaking(false);
+  }, []);
+
+  // Stop TTS on unmount
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+      if (ttsWatchdogRef.current) clearTimeout(ttsWatchdogRef.current);
+    };
   }, []);
 
   return { startListening, stopListening, speak, stopSpeaking, isSpeaking, isListening };

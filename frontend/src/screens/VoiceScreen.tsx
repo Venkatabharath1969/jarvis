@@ -8,7 +8,6 @@ import {
   Platform,
   Animated,
   Easing,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -108,6 +107,7 @@ const VoiceScreen: React.FC = () => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
   }, []);
 
+
   // ── WebSocket message handler ───────────────────────────────────────────
   const handleWSMessage = useCallback((msg: WSMessage) => {
     clearProcessingTimer();
@@ -137,64 +137,61 @@ const VoiceScreen: React.FC = () => {
       .then((raw) => {
         if (raw) {
           const parsed = JSON.parse(raw) as Message[];
-          setMessages(parsed.slice(-20));
+          setMessages((prev) => prev.length === 0 ? parsed.slice(-20) : prev);
         }
       })
       .catch(() => {});
   }, []);
 
-  // ── Core: transcript received (from STT or timeout) ─────────────────────
-  const handleTranscript = useCallback((transcript: string | null) => {
-    if (!transcript) {
-      setMicState('idle');
-      return;
-    }
-    addMessage('user', transcript);
-    setMicState('processing');
-    startProcessingTimer();
-
-    if (connectionStatus !== 'connected') {
-      // Delay slightly to let the UI render the 'processing' state first
-      setTimeout(() => {
-        clearProcessingTimer();
-        const errText = "I'm offline right now. Please check your connection and try again.";
-        addMessage('assistant', errText);
-        setMicState('speaking');
-        speak(errText);
-      }, 300);
-      return;
-    }
-
-    sendQuery(transcript);
-  }, [addMessage, sendQuery, speak, connectionStatus, startProcessingTimer, clearProcessingTimer]);
-
   // ── Mic button handler ──────────────────────────────────────────────────
   const handleMicPress = useCallback(async () => {
-    // SPEAKING → interrupt and go idle
+    if (micState === 'listening') {
+      // FIX: stopListening now resolves the pending startListening() promise immediately.
+      // The original coroutine resumes with the partial transcript and owns the rest of the flow.
+      await stopListening();
+      return;
+    }
+
     if (micState === 'speaking') {
       stopSpeaking();
       setMicState('idle');
       return;
     }
 
-    // PROCESSING → ignore (can't interrupt backend call)
     if (micState === 'processing') {
+      // Give haptic feedback so it doesn't feel dead
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
       return;
     }
 
-    // LISTENING → stop and immediately send transcript
-    if (micState === 'listening') {
-      stopListening(); // fires handleTranscript synchronously with partial or null
+    // Guard: don't start recording when offline (sendQuery would silently drop)
+    if (connectionStatus !== 'connected') {
+      addMessage('assistant', 'JARVIS is offline. Please check your connection and try again.');
       return;
     }
 
-    // IDLE → start listening
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     setMicState('listening');
-    startListening(handleTranscript);
-  }, [micState, startListening, stopListening, stopSpeaking, handleTranscript]);
+
+    const transcript = await startListening();
+    if (!transcript) {
+      setMicState('idle');
+      addMessage('assistant', "I didn't catch that. Tap the microphone and try again.");
+      return;
+    }
+
+    addMessage('user', transcript);
+    setMicState('processing');
+    const sent = sendQuery(transcript);
+    if (!sent) {
+      setMicState('idle');
+      addMessage('assistant', 'Connection lost. Please wait for reconnection and try again.');
+    }
+  }, [micState, connectionStatus, startListening, stopListening, stopSpeaking, addMessage, sendQuery]);
 
   // ── Status label color ─────────────────────────────────────────────────
   const statusLabelColor =

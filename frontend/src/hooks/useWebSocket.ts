@@ -19,7 +19,7 @@ interface UseWebSocketOptions {
 
 interface UseWebSocketReturn {
   connectionStatus: ConnectionStatus;
-  sendQuery: (text: string) => void;
+  sendQuery: (text: string) => boolean;
   disconnect: () => void;
 }
 
@@ -32,6 +32,7 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions): UseWebSocketRe
   const mountedRef = useRef(true);
   const urlRef = useRef(DEFAULT_WS_URL);
   const onMessageRef = useRef(onMessage);
+  const pendingQueryRef = useRef<string | null>(null);
 
   // Keep callback ref fresh without re-running the effect
   useEffect(() => {
@@ -101,6 +102,14 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions): UseWebSocketRe
       reconnectAttemptRef.current = 0;
       setConnectionStatus('connected');
       startHeartbeat();
+      // Flush any query that was sent while WS was reconnecting
+      if (pendingQueryRef.current) {
+        const queued = pendingQueryRef.current;
+        pendingQueryRef.current = null;
+        try {
+          ws.send(JSON.stringify({ type: 'query', text: queued }));
+        } catch {}
+      }
     };
 
     ws.onmessage = (event) => {
@@ -170,10 +179,18 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions): UseWebSocketRe
     return () => sub.remove();
   }, [connect, clearTimers]);
 
-  const sendQuery = useCallback((text: string) => {
+  const sendQuery = useCallback((text: string): boolean => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'query', text }));
+      try {
+        wsRef.current.send(JSON.stringify({ type: 'query', text }));
+        return true;
+      } catch {
+        return false;
+      }
     }
+    // Queue the query — will be sent when connection restores (max 1 queued at a time)
+    pendingQueryRef.current = text;
+    return false;
   }, []);
 
   const disconnect = useCallback(() => {
