@@ -9,6 +9,7 @@ import {
 import { COLORS, SIZES } from '../constants/theme';
 import WaveformBars from './WaveformBars';
 import BouncingDots from './BouncingDots';
+import MicSvgIcon, { SpeakerSvgIcon } from './MicSvgIcon';
 
 export type MicState = 'idle' | 'listening' | 'processing' | 'speaking';
 
@@ -41,75 +42,35 @@ const MicButton: React.FC<MicButtonProps> = ({ state, onPress, disabled = false 
     stopAllAnimations();
 
     if (state === 'idle') {
-      // Two expanding rings that pulse outward
-      const createPulse = (anim: Animated.Value, delay: number) => {
-        return Animated.loop(
+      const createPulse = (anim: Animated.Value, delay: number) =>
+        Animated.loop(
           Animated.sequence([
             Animated.delay(delay),
-            Animated.timing(anim, {
-              toValue: 1,
-              duration: 2000,
-              easing: Easing.out(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(anim, {
-              toValue: 0,
-              duration: 0,
-              useNativeDriver: true,
-            }),
-          ])
+            Animated.timing(anim, { toValue: 1, duration: 2200, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+            Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
+          ]),
         );
-      };
       pulse1Loop.current = createPulse(pulseAnim1, 0);
-      pulse2Loop.current = createPulse(pulseAnim2, 900);
+      pulse2Loop.current = createPulse(pulseAnim2, 1000);
       pulse1Loop.current.start();
       pulse2Loop.current.start();
     } else if (state === 'listening') {
-      // Subtle glow pulse on the button itself
       glowLoop.current = Animated.loop(
         Animated.sequence([
-          Animated.timing(glowAnim, {
-            toValue: 1,
-            duration: 700,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(glowAnim, {
-            toValue: 0.4,
-            duration: 700,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ])
+          Animated.timing(glowAnim, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0.4, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]),
       );
       glowLoop.current.start();
-      Animated.spring(scaleAnim, {
-        toValue: 1.05,
-        friction: 5,
-        useNativeDriver: true,
-      }).start();
+      Animated.spring(scaleAnim, { toValue: 1.07, friction: 5, useNativeDriver: true }).start();
     } else if (state === 'processing') {
-      Animated.spring(scaleAnim, {
-        toValue: 0.95,
-        friction: 6,
-        useNativeDriver: true,
-      }).start();
+      Animated.spring(scaleAnim, { toValue: 0.93, friction: 6, useNativeDriver: true }).start();
     } else if (state === 'speaking') {
       glowLoop.current = Animated.loop(
         Animated.sequence([
-          Animated.timing(glowAnim, {
-            toValue: 1,
-            duration: 1000,
-            easing: Easing.inOut(Easing.sine),
-            useNativeDriver: true,
-          }),
-          Animated.timing(glowAnim, {
-            toValue: 0.3,
-            duration: 1000,
-            easing: Easing.inOut(Easing.sine),
-            useNativeDriver: true,
-          }),
-        ])
+          Animated.timing(glowAnim, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0.3, duration: 1000, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+        ]),
       );
       glowLoop.current.start();
     }
@@ -117,81 +78,42 @@ const MicButton: React.FC<MicButtonProps> = ({ state, onPress, disabled = false 
     return () => stopAllAnimations();
   }, [state, stopAllAnimations, pulseAnim1, pulseAnim2, glowAnim, scaleAnim]);
 
-  const pulseScale1 = pulseAnim1.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.8],
-  });
-  const pulseOpacity1 = pulseAnim1.interpolate({
-    inputRange: [0, 0.3, 1],
-    outputRange: [0.5, 0.3, 0],
-  });
-  const pulseScale2 = pulseAnim2.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.8],
-  });
-  const pulseOpacity2 = pulseAnim2.interpolate({
-    inputRange: [0, 0.3, 1],
-    outputRange: [0.5, 0.3, 0],
-  });
+  const pulseScale1 = pulseAnim1.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9] });
+  const pulseOpacity1 = pulseAnim1.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0.55, 0.3, 0] });
+  const pulseScale2 = pulseAnim2.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9] });
+  const pulseOpacity2 = pulseAnim2.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0.55, 0.3, 0] });
 
   const buttonBgColor = state === 'listening' ? COLORS.accent2Dark : COLORS.accentDark;
+
   const innerContent = () => {
-    if (state === 'listening') {
-      return <WaveformBars />;
+    if (state === 'listening') return <WaveformBars />;
+    if (state === 'processing') return <BouncingDots />;
+    if (state === 'speaking') {
+      return (
+        <Animated.View style={{ opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }}>
+          <SpeakerSvgIcon size={SIZES.micIconSize} color={COLORS.white} />
+        </Animated.View>
+      );
     }
-    if (state === 'processing') {
-      return <BouncingDots />;
-    }
-    // idle or speaking — show mic icon using Unicode
-    return (
-      <Animated.Text
-        style={[
-          styles.micIcon,
-          state === 'speaking' && { opacity: glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) },
-        ]}
-      >
-        {state === 'speaking' ? '🔊' : '🎤'}
-      </Animated.Text>
-    );
+    return <MicSvgIcon size={SIZES.micIconSize} color={COLORS.white} />;
   };
 
   return (
     <View style={styles.container}>
-      {/* Pulse rings (idle only) */}
+      {/* Outer glow rings — idle only */}
       {state === 'idle' && (
         <>
-          <Animated.View
-            style={[
-              styles.pulseRing,
-              {
-                transform: [{ scale: pulseScale1 }],
-                opacity: pulseOpacity1,
-              },
-            ]}
-          />
-          <Animated.View
-            style={[
-              styles.pulseRing,
-              {
-                transform: [{ scale: pulseScale2 }],
-                opacity: pulseOpacity2,
-              },
-            ]}
-          />
+          <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseScale1 }], opacity: pulseOpacity1 }]} />
+          <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseScale2 }], opacity: pulseOpacity2 }]} />
         </>
       )}
 
-      {/* Listening glow ring */}
+      {/* Listening ring */}
       {state === 'listening' && (
-        <Animated.View
-          style={[
-            styles.listeningRing,
-            { opacity: glowAnim },
-          ]}
-        />
+        <Animated.View style={[styles.listeningRing, { opacity: glowAnim }]} />
       )}
 
-      {/* Main button */}
+      {/* Button */}
       <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
         <TouchableOpacity
           style={[styles.button, { backgroundColor: buttonBgColor }]}
@@ -249,12 +171,9 @@ const styles = StyleSheet.create({
     width: SIZES.micInnerSize,
     height: SIZES.micInnerSize,
     borderRadius: SIZES.micInnerSize / 2,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    backgroundColor: 'rgba(0,0,0,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  micIcon: {
-    fontSize: SIZES.micIconSize,
   },
 });
 

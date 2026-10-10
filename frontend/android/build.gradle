@@ -31,6 +31,11 @@ allprojects {
             force 'androidx.core:core:1.13.1'
             force 'androidx.core:core-ktx:1.13.1'
         }
+        // Exclude legacy support library — conflicts with AndroidX (both ship the same classes)
+        exclude group: 'com.android.support', module: 'support-compat'
+        exclude group: 'com.android.support', module: 'animated-vector-drawable'
+        exclude group: 'com.android.support', module: 'support-vector-drawable'
+        exclude group: 'com.android.support', module: 'versionedparcelable'
     }
     repositories {
         maven {

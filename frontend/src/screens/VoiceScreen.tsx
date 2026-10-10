@@ -81,10 +81,10 @@ const VoiceScreen: React.FC = () => {
   }, []);
 
   const handleWSMessage = useCallback((msg: WSMessage) => {
-    if (msg.type === 'response' && typeof msg.response === 'string') {
-      addMessage('assistant', msg.response);
+    if (msg.type === 'response' && typeof msg.text === 'string') {
+      addMessage('assistant', msg.text);
       setMicState('speaking');
-      speak(msg.response);
+      speak(msg.text);
     } else if (msg.type === 'error' && typeof msg.error === 'string') {
       const errText = `Sorry, I encountered an error: ${msg.error}`;
       addMessage('assistant', errText);

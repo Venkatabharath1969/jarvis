@@ -1,14 +1,21 @@
-import { useState, useRef, useCallback } from 'react';
-import { Audio } from 'expo-av';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import * as Speech from 'expo-speech';
+import { Platform, PermissionsAndroid } from 'react-native';
 
-// Demo query cycle for the Expo prototype (no native STT required)
+let Voice: any = null;
+try {
+  Voice = require('@react-native-voice/voice').default;
+} catch {
+  // fallback to demo mode if native module not linked
+}
+
+// Fallback demo cycle — used only if native STT is unavailable
 const DEMO_QUERIES = [
-  'What is my schedule for today?',
-  'What are my top action items this week?',
-  'Summarize my last meeting.',
-  'When is my next meeting and with whom?',
-  'Give me a brief executive summary of overnight developments.',
+  'What are my overdue action items?',
+  'What meetings did I have this week?',
+  'Summarise the Q4 budget review.',
+  'Who is Klaus Weber and what did he commit to?',
+  'What is the latest on Project Delta?',
 ];
 
 interface UseSpeechReturn {
@@ -23,92 +30,112 @@ interface UseSpeechReturn {
 export function useSpeech(): UseSpeechReturn {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
   const demoIndexRef = useRef(0);
-  const listenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolveRef = useRef<((t: string) => void) | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partialRef = useRef<string>('');
+
+  // Wire up Voice events once on mount
+  useEffect(() => {
+    if (!Voice) return;
+
+    Voice.onSpeechPartialResults = (e: any) => {
+      const partial = e.value?.[0] ?? '';
+      partialRef.current = partial;
+    };
+
+    Voice.onSpeechResults = (e: any) => {
+      const transcript = e.value?.[0] ?? partialRef.current;
+      if (transcript && resolveRef.current) {
+        if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+        const cb = resolveRef.current;
+        resolveRef.current = null;
+        setIsListening(false);
+        cb(transcript);
+      }
+    };
+
+    Voice.onSpeechError = (_e: any) => {
+      // On error fall through to the timeout which returns a demo query
+      // so the UX never hangs
+    };
+
+    return () => {
+      Voice.destroy().catch(() => {});
+    };
+  }, []);
+
+  const requestMicPermission = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      {
+        title: 'Microphone Permission',
+        message: 'JARVIS needs microphone access to hear your voice commands.',
+        buttonPositive: 'Allow',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  }, []);
 
   const stopListening = useCallback(async (): Promise<void> => {
-    if (listenTimeoutRef.current) {
-      clearTimeout(listenTimeoutRef.current);
-      listenTimeoutRef.current = null;
-    }
-    if (recordingRef.current) {
-      try {
-        const status = await recordingRef.current.getStatusAsync();
-        if (status.isRecording) {
-          await recordingRef.current.stopAndUnloadAsync();
-        }
-      } catch {
-        // ignore cleanup errors
-      }
-      recordingRef.current = null;
-    }
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    try { if (Voice) await Voice.stop(); } catch { /* ignore */ }
     setIsListening(false);
   }, []);
 
   const startListening = useCallback(async (): Promise<string | null> => {
-    // Request microphone permission
-    const { granted } = await Audio.requestPermissionsAsync();
-    if (!granted) {
-      return null;
-    }
+    const hasPermission = await requestMicPermission();
+    if (!hasPermission) return null;
 
     setIsListening(true);
+    partialRef.current = '';
 
-    try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
+    return new Promise<string | null>((resolve) => {
+      resolveRef.current = (t: string) => resolve(t);
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
+      // 10-second hard timeout — always resolves so UI never hangs
+      timeoutRef.current = setTimeout(async () => {
+        resolveRef.current = null;
+        try { if (Voice) await Voice.stop(); } catch { /* ignore */ }
+        setIsListening(false);
 
-      // Auto-stop after 10 seconds maximum
-      const transcript = await new Promise<string>((resolve) => {
-        listenTimeoutRef.current = setTimeout(async () => {
-          listenTimeoutRef.current = null;
-          if (recordingRef.current) {
-            try {
-              const status = await recordingRef.current.getStatusAsync();
-              if (status.isRecording) {
-                await recordingRef.current.stopAndUnloadAsync();
-              }
-            } catch {
-              // ignore
-            }
-            recordingRef.current = null;
-          }
-          // Return next demo query in cycle
-          const query = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
+        // If we got a partial result during recording, use it
+        if (partialRef.current) {
+          resolve(partialRef.current);
+          return;
+        }
+
+        // No Voice module or nothing heard — use demo cycling
+        if (!Voice) {
+          const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
           demoIndexRef.current += 1;
-          resolve(query);
-        }, 2500); // 2.5s listening window for demo responsiveness
+          resolve(q);
+        } else {
+          // Real STT but nothing heard — resolve null so UI shows idle
+          resolve(null);
+        }
+      }, 10000);
 
-        // Also resolve immediately via cycling demo for snappy demo UX:
-        // We wait the timeout to simulate real recording
-      });
-
-      setIsListening(false);
-      return transcript;
-    } catch {
-      setIsListening(false);
-      // Return demo query even on error so demo still works
-      const query = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
-      demoIndexRef.current += 1;
-      return query;
-    }
-  }, []);
+      if (Voice) {
+        Voice.start('en-US').catch(() => {
+          // Start failed — fall to demo
+          if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+          resolveRef.current = null;
+          const q = DEMO_QUERIES[demoIndexRef.current % DEMO_QUERIES.length];
+          demoIndexRef.current += 1;
+          setIsListening(false);
+          resolve(q);
+        });
+      }
+    });
+  }, [requestMicPermission]);
 
   const speak = useCallback((text: string) => {
-    // Stop any current speech first
     Speech.stop();
     setIsSpeaking(true);
-
     Speech.speak(text, {
-      rate: 0.9,
+      rate: 0.92,
       pitch: 1.0,
       language: 'en-US',
       onDone: () => setIsSpeaking(false),
@@ -122,12 +149,5 @@ export function useSpeech(): UseSpeechReturn {
     setIsSpeaking(false);
   }, []);
 
-  return {
-    startListening,
-    stopListening,
-    speak,
-    stopSpeaking,
-    isSpeaking,
-    isListening,
-  };
+  return { startListening, stopListening, speak, stopSpeaking, isSpeaking, isListening };
 }

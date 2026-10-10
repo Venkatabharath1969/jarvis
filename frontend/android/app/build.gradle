@@ -119,6 +119,9 @@ android {
         jniLibs {
             useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
         }
+        resources {
+            pickFirsts += ['META-INF/*.version', 'META-INF/LICENSE', 'META-INF/NOTICE', 'META-INF/*.kotlin_module']
+        }
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
