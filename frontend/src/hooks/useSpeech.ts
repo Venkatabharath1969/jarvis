@@ -41,6 +41,9 @@ export function useSpeech(): UseSpeechReturn {
   const partialRef = useRef<string>('');
   const utteranceIdRef = useRef(0);
   const ttsWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Cache mic permission so we never show the system dialog mid-flow (which
+  // triggers onPause → onResume → Android windowBackground flash).
+  const micPermGrantedRef = useRef<boolean | null>(null);
 
   // Settle the current listen session exactly once (idempotent)
   const settle = useCallback((t: string | null) => {
@@ -51,6 +54,11 @@ export function useSpeech(): UseSpeechReturn {
     sessionRef.current = null;
     setIsListening(false);
     partialRef.current = '';
+    // CRITICAL: tell Voice to stop so it releases Android audio focus BEFORE
+    // expo-speech tries to acquire it for TTS. Without this, Voice holds the
+    // audio focus after natural STT completion (onSpeechResults) and TTS is
+    // silently blocked or degraded.
+    try { if (Voice) Voice.stop().catch(() => {}); } catch {}
     s.resolve(t);
   }, []);
 
@@ -81,6 +89,12 @@ export function useSpeech(): UseSpeechReturn {
 
   const requestMicPermission = useCallback(async (): Promise<boolean> => {
     if (Platform.OS !== 'android') return true;
+    // Return cached result — avoids showing the system dialog on every mic press
+    // which would trigger onPause() → onResume() → Android windowBackground flash.
+    if (micPermGrantedRef.current !== null) return micPermGrantedRef.current;
+    // Check first (no dialog if already granted)
+    const already = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    if (already) { micPermGrantedRef.current = true; return true; }
     const granted = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
       {
@@ -89,7 +103,9 @@ export function useSpeech(): UseSpeechReturn {
         buttonPositive: 'Allow',
       },
     );
-    return granted === PermissionsAndroid.RESULTS.GRANTED;
+    const result = granted === PermissionsAndroid.RESULTS.GRANTED;
+    micPermGrantedRef.current = result;
+    return result;
   }, []);
 
   // FIX: now always unblocks startListening() — calls Voice.stop() for native cleanup,
@@ -169,7 +185,10 @@ export function useSpeech(): UseSpeechReturn {
       }
     };
 
-    Platform.OS === 'android' ? setTimeout(doSpeak, 50) : doSpeak();
+    // Android: STT (Voice) holds audio focus. Give it 300ms to fully release
+    // focus before expo-speech tries to acquire it. 50ms was too short — TTS
+    // was silently dropped when the STT audio session hadn't closed yet.
+    Platform.OS === 'android' ? setTimeout(doSpeak, 300) : doSpeak();
   }, []);
 
   const stopSpeaking = useCallback(() => {

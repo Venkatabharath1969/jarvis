@@ -257,17 +257,17 @@ Meetings (21): 5 past (Sep 27–Oct 8) + 16 future (Oct 11 onward)
 
 Action items (20): mix of critical/high/medium priorities, several overdue
 
-## FRONTEND UX FIXES APPLIED (v1.3.3)
+## FRONTEND UX FIXES APPLIED (v1.3.4)
 
 All these bugs are FIXED — do not revert:
 
-1. **Blank screen** (never showed result): `startListening()` returned a Promise that
+1. **Blank screen (never showed result)**: `startListening()` returned a Promise that
    hung when `stopListening()` called Voice.stop() but never resolved it.
    Fix: `ListenSession` struct + idempotent `settle()` helper in useSpeech.ts.
 
 2. **TTS Android race**: `Speech.stop()` + `Speech.speak()` same tick — previous
    utterance's `onStopped` called `setIsSpeaking(false)` on new utterance.
-   Fix: utterance-ID counter; 50ms Android delay; 3900 char cap; watchdog timer.
+   Fix: utterance-ID counter; 300ms Android delay (was 50ms — too short); 3900 char cap; watchdog timer.
 
 3. **WebSocket silent drop**: `sendQuery` returned void, discarded queries when
    socket was closed.
@@ -285,7 +285,33 @@ All these bugs are FIXED — do not revert:
 6. **Settings screen showing server URL**: utilsnow.com must not be visible to
    colleagues who share the app.
    Fix: SettingsScreen v1.3.3 shows only Wake Word Active status + About card.
-   No server row, no URL, no domain anywhere in the UI.
+
+7. **BLACK SCREEN during voice processing (v1.3.4)**: Android's WindowManager renders
+   `android:windowBackground` before React Native JS thread repaints during every
+   activity transition (STT overlay dismiss triggers onPause → onResume on MainActivity).
+   Fix A (native): styles.xml windowBackground → `@android:color/transparent` so no
+     color is ever shown during transitions.
+   Fix B (JS safety net): VoiceScreen fadeAnim initializes to 1; AppState 'active'
+     listener calls `fadeAnim.setValue(1)` to recover from any RN animation edge case.
+
+8. **TTS silent on Android (v1.3.4)**: Voice (STT) held Android audio focus after
+   `onSpeechResults` fired. expo-speech tried to acquire focus 50ms later but STT hadn't
+   released it yet → TTS silently dropped.
+   Fix: `settle()` calls `Voice.stop()` before resolving; delay increased to 300ms.
+
+9. **Permission dialog causing extra onPause/onResume (v1.3.4)**: `PermissionsAndroid.request()`
+   was called on every mic press. On first use it shows a system dialog → triggers
+   MainActivity onPause → onResume → potential windowBackground flash (amplifies bug #7).
+   Fix: cache permission result in ref; use `check()` first, `request()` only if denied.
+
+10. **Wake word _taskRunning global (v1.3.4)**: Module-level `_taskRunning` was shared
+    across background service restarts (`restartOnTaskRemoved: true`), causing audio
+    capture to stop mid-session when the service restarted.
+    Fix: moved to per-invocation local variable inside `wakeWordTask`.
+
+11. **USE_FULL_SCREEN_INTENT (v1.3.4)**: Declared in manifest but never used;
+    on Android 14+ this caused degraded notification behavior / visual disruption.
+    Fix: removed from AndroidManifest.xml.
 
 ## WAKE WORD SETUP
 
@@ -387,6 +413,25 @@ Q: "What time is the 1:1 with Bharath?"
 A: "Your next 1:1 with Bharath is at 6:30 AM on Tuesday, October 11"
 
 ## VERSION HISTORY
+
+v1.3.4 (2026-10-10):
+  - BLACK SCREEN FIX (root cause): styles.xml windowBackground → @android:color/transparent
+    (was @color/activityBackground = #0A0A0A) so Android WindowManager shows nothing during
+    activity transitions (STT overlay dismiss, permission dialogs).
+  - BLACK SCREEN FIX (safety net): VoiceScreen.tsx fadeAnim starts at 1 (not 0); AppState
+    listener forces opacity=1 on every app → active transition (covers all Android onResume paths).
+  - TTS SILENT FIX: settle() now calls Voice.stop() before resolving; this releases Android
+    audio focus so expo-speech can acquire it. Previously TTS was silently blocked.
+  - TTS TIMING FIX: Android TTS delay increased 50ms → 300ms (STT audio session needs time
+    to fully close before TTS can acquire audio focus).
+  - PERMISSION FIX: requestMicPermission() now caches result; uses check() before request()
+    so system dialog never shows on 2nd+ mic press (avoids extra onPause/onResume cycle).
+  - WAKE WORD FIX: _taskRunning moved from module-level global into wakeWordTask local scope;
+    prevents shared state corruption across background service restarts.
+  - MANIFEST FIX: Removed USE_FULL_SCREEN_INTENT (declared but never used; caused Android
+    14+ notification degradation).
+  - TYPESCRIPT FIX: MicButton.tsx Easing.sine → Easing.sin (pre-existing typo, now clean).
+  - 8/8 queries verified passing at 1.0–4.8s after APK rebuild.
 
 v1.3.3 (2026-10-10):
   - LLM switched to Groq (openai/gpt-oss-120b, 1000 RPM, no daily limit)

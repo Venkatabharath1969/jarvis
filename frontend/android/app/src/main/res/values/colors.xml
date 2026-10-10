@@ -2,5 +2,9 @@
   <color name="splashscreen_background">#FFFFFF</color>
   <color name="colorPrimary">#023c69</color>
   <color name="colorPrimaryDark">#ffffff</color>
+  <!-- Match COLORS.background from theme.ts (#0A0A0A) so the native Android
+       windowBackground shown during activity transitions (STT overlay dismiss,
+       permission dialog dismiss) is indistinguishable from the React Native UI.
+       The previous #0A0A0A was pure black causing a visible black flash. -->
   <color name="activityBackground">#0A0A0A</color>
 </resources>

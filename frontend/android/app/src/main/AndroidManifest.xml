@@ -15,9 +15,6 @@
   <!-- Boot receiver — re-show "tap to restart JARVIS" notification on device reboot -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-  <!-- Full-screen notification when wake word fires with screen off -->
-  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
-
   <!-- Legacy storage (React Native ecosystem requires these) -->
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>

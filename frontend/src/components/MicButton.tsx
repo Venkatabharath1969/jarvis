@@ -68,8 +68,8 @@ const MicButton: React.FC<MicButtonProps> = ({ state, onPress, disabled = false 
     } else if (state === 'speaking') {
       glowLoop.current = Animated.loop(
         Animated.sequence([
-          Animated.timing(glowAnim, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
-          Animated.timing(glowAnim, { toValue: 0.3, duration: 1000, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(glowAnim, { toValue: 0.3, duration: 1000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
         ]),
       );
       glowLoop.current.start();

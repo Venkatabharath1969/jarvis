@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Platform,
   Animated,
+  AppState,
+  AppStateStatus,
   Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -40,7 +42,12 @@ const VoiceScreen: React.FC = () => {
   const [micState, setMicState] = useState<MicState>('idle');
   const [messages, setMessages] = useState<Message[]>([]);
   const scrollRef = useRef<ScrollView>(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Start at 1 — the container is ALWAYS visible. The 800ms fade-in only runs once on
+  // very first mount. Setting initial value to 1 means if Android triggers onPause →
+  // onResume (e.g. STT overlay dismisses), the native animation driver NEVER resets
+  // this to 0 and makes the screen black.
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnimStarted = useRef(false);
   const headerGlow = useRef(new Animated.Value(0)).current;
   const processingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micStateRef = useRef<MicState>('idle'); // mirror for use inside closures
@@ -60,8 +67,26 @@ const VoiceScreen: React.FC = () => {
         Animated.timing(headerGlow, { toValue: 0.4, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ]),
     ).start();
-    Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
+    // Fade in from 0 → 1 on very first mount only
+    if (!fadeAnimStarted.current) {
+      fadeAnimStarted.current = true;
+      fadeAnim.setValue(0);
+      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
+    }
   }, [fadeAnim, headerGlow]);
+
+  // Re-ensure opacity=1 when app comes back to foreground (STT overlay dismissal,
+  // permission dialog dismiss, or any other Android onPause → onResume cycle).
+  useEffect(() => {
+    const handleAppState = (next: AppStateStatus) => {
+      if (next === 'active') {
+        fadeAnim.stopAnimation();
+        fadeAnim.setValue(1);
+      }
+    };
+    const sub = AppState.addEventListener('change', handleAppState);
+    return () => sub.remove();
+  }, [fadeAnim]);
 
   // ── Sync isSpeaking → idle ──────────────────────────────────────────────
   useEffect(() => {

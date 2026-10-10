@@ -52,10 +52,14 @@ async function ensureModelsOnDisk(): Promise<void> {
 
 // ─── Background foreground-service task ──────────────────────────────────────
 
-let _taskRunning = false;
-
+// NOTE: _taskRunning is now a local variable INSIDE wakeWordTask so each
+// invocation has its own independent lifecycle. The module-level global caused
+// a stale flag to be shared across service restarts (restartOnTaskRemoved:true),
+// which could stop audio capture mid-session when the service restarted.
 const wakeWordTask = async (_taskData: unknown) => {
   if (!AudioRecord || !KWS) return;
+
+  let _taskRunning = false; // per-invocation flag — NOT shared across restarts
 
   const modelDir = getModelDir().replace(/^file:\/\//, '');
 
