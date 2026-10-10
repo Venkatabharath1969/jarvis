@@ -44,6 +44,9 @@ export function useSpeech(): UseSpeechReturn {
   // Cache mic permission so we never show the system dialog mid-flow (which
   // triggers onPause → onResume → Android windowBackground flash).
   const micPermGrantedRef = useRef<boolean | null>(null);
+  // Silence auto-stop: if user speaks, then pauses for 2s with no new words,
+  // automatically end the listening session. Improves UX by avoiding manual button press.
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Settle the current listen session exactly once (idempotent)
   const settle = useCallback((t: string | null) => {
@@ -51,14 +54,14 @@ export function useSpeech(): UseSpeechReturn {
     if (!s || s.settled) return;
     s.settled = true;
     if (s.timeout) { clearTimeout(s.timeout); }
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
     sessionRef.current = null;
     setIsListening(false);
     partialRef.current = '';
-    // CRITICAL: tell Voice to stop so it releases Android audio focus BEFORE
-    // expo-speech tries to acquire it for TTS. Without this, Voice holds the
-    // audio focus after natural STT completion (onSpeechResults) and TTS is
-    // silently blocked or degraded.
-    try { if (Voice) Voice.stop().catch(() => {}); } catch {}
+    // DO NOT call Voice.stop() here — Voice auto-stops itself after onSpeechResults
+    // and is already in a "stopped" state. Calling stop() on an already-stopped module
+    // can corrupt its state on Android and prevent the next start(). Let destroy()
+    // (called at the start of the next session) handle full cleanup.
     s.resolve(t);
   }, []);
 
@@ -68,6 +71,14 @@ export function useSpeech(): UseSpeechReturn {
 
     Voice.onSpeechPartialResults = (e: any) => {
       partialRef.current = e.value?.[0] ?? '';
+      // User is speaking — reset the silence timer
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        // 2s of silence — auto-end listening if still active
+        if (sessionRef.current && !sessionRef.current.settled) {
+          settle(partialRef.current || null);
+        }
+      }, 2000);
     };
 
     // FIX: use || not ?? so empty string "" falls back to partial
@@ -118,6 +129,35 @@ export function useSpeech(): UseSpeechReturn {
   const startListening = useCallback(async (): Promise<string | null> => {
     const hasPermission = await requestMicPermission();
     if (!hasPermission) return null;
+
+    // CRITICAL: Destroy and reinitialize Voice module. @react-native-voice/voice
+    // requires destroy() before start() on Android to reset the native module state.
+    // Without this, the 2nd and subsequent start() calls fail with a "stopped-but-not-destroyed"
+    // error. This was the root cause of "I didn't catch that" on every press after the first.
+    try {
+      if (Voice) {
+        await Voice.destroy();
+        // After destroy(), event handlers are removed. Re-attach them.
+        Voice.onSpeechPartialResults = (e: any) => {
+          partialRef.current = e.value?.[0] ?? '';
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            if (sessionRef.current && !sessionRef.current.settled) {
+              settle(partialRef.current || null);
+            }
+          }, 2000);
+        };
+        Voice.onSpeechResults = (e: any) => {
+          const transcript = e.value?.[0] || partialRef.current || null;
+          settle(transcript);
+        };
+        Voice.onSpeechError = (_e: any) => {
+          settle(partialRef.current || null);
+        };
+      }
+    } catch {
+      // If destroy fails, continue — Voice.start may recover
+    }
 
     setIsListening(true);
     partialRef.current = '';
