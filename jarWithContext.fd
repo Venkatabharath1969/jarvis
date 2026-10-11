@@ -79,18 +79,19 @@ app binary constant (config.ts) but never rendered anywhere in the UI.
 ## GITHUB REPOSITORY
 
 https://github.com/Venkatabharath1969/jarvis
-Branch: master (NOT main — push to master)
+Branch: main (sole branch — push directly to main)
 Latest commit: Groq integration (2026-10-10)
 
 Push command:
-  cd /root/jarvis && git push origin master
+  cd /root/jarvis && git push origin main
 
 NOTE: GitHub PAT lacks `workflow` scope — deploy.yml committed locally but excluded
 from push. To push it: generate a new PAT at github.com/settings/tokens with
-`workflow` scope checked, then: git push origin master (it will pick up .github/).
+`workflow` scope checked, then: git push origin main (it will pick up .github/).
 New PAT provided 2026-10-11 (stored in admin's secure notes) — has repo/admin
 scopes but NOT workflow scope (confirmed by x-oauth-scopes header check).
-Latest push: 952ba4d (README + .env.example updated, .github/ kept local only)
+Latest push: da6234d (jarWithContext.fd updated, .github/ kept local only)
+BRANCH CLEANUP (2026-10-11): master branch deleted. Only "main" exists. All pushes go to main.
 
 ## VPS DETAILS
 
@@ -364,7 +365,7 @@ cd android && ./gradlew assembleRelease --no-daemon
 cp app/build/outputs/apk/release/app-release.apk /var/www/jarvis/app.apk
 
 # Git push
-cd /root/jarvis && git push origin master
+cd /root/jarvis && git push origin main
 ```
 
 ## KNOWN ISSUES AND PERMANENT FIXES
