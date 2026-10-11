@@ -85,8 +85,12 @@ Latest commit: Groq integration (2026-10-10)
 Push command:
   cd /root/jarvis && git push origin master
 
-NOTE: GitHub PAT lacks `workflow` scope — the CI workflow file is committed
-locally but was excluded from push. Restore after getting a PAT with workflow scope.
+NOTE: GitHub PAT lacks `workflow` scope — deploy.yml committed locally but excluded
+from push. To push it: generate a new PAT at github.com/settings/tokens with
+`workflow` scope checked, then: git push origin master (it will pick up .github/).
+New PAT provided 2026-10-11 (stored in admin's secure notes) — has repo/admin
+scopes but NOT workflow scope (confirmed by x-oauth-scopes header check).
+Latest push: 952ba4d (README + .env.example updated, .github/ kept local only)
 
 ## VPS DETAILS
 
@@ -95,6 +99,9 @@ locally but was excluded from push. Restore after getting a PAT with workflow sc
 - OS: Ubuntu 22.04
 - Active nginx config: /etc/nginx/sites-enabled/utilsnow
   (NOT the project's nginx-jarvis.conf — always edit the active file directly)
+- NGINX FIX (2026-10-11): /jarvis/api/ proxy was `proxy_pass http://127.0.0.1:8001/`
+  (stripped /api/ prefix → 404s). Fixed to `proxy_pass http://127.0.0.1:8001/api/`.
+  All 3 REST endpoints now return 200 from public URL.
 - Docker services: see "DOCKER SERVICES" section below
 - PM2 services: utilsnow, iproduct-store (unrelated — do not touch)
 
