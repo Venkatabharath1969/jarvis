@@ -14,7 +14,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import get_settings
 from app.providers import get_provider
@@ -22,15 +21,27 @@ from app.providers import get_provider
 logger = logging.getLogger(__name__)
 
 
-def _llm() -> ChatGoogleGenerativeAI | None:
+def _llm() -> Any | None:
+    """Use the same LLM factory as supervisor: Groq first, Gemini fallback."""
     settings = get_settings()
-    if not settings.GOOGLE_API_KEY:
-        return None
-    return ChatGoogleGenerativeAI(
-        model=settings.GEMINI_MODEL,
-        google_api_key=settings.GOOGLE_API_KEY,
-        temperature=0,
-    )
+    if settings.GROQ_API_KEY:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=settings.GROQ_MODEL,
+            openai_api_key=settings.GROQ_API_KEY,
+            openai_api_base="https://api.groq.com/openai/v1",
+            temperature=0,
+            max_retries=1,
+            request_timeout=15,
+        )
+    if settings.GOOGLE_API_KEY:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model=settings.GEMINI_MODEL,
+            google_api_key=settings.GOOGLE_API_KEY,
+            temperature=0,
+        )
+    return None
 
 
 def _parse_datetime_range(text: str) -> tuple[datetime, datetime] | None:

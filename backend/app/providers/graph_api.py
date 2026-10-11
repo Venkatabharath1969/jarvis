@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -14,6 +15,14 @@ logger = logging.getLogger(__name__)
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 SCOPES = ["https://graph.microsoft.com/.default"]
+
+_PERMISSIONS_GUIDE = (
+    "Microsoft Graph API permissions not granted. "
+    "An Azure admin must go to Azure Portal → App Registrations → "
+    "DAI-GP9_ai-sdlc_AIDLC_AgenticAI_2592-2 → API Permissions → "
+    "add Application permissions: Calendars.Read, OnlineMeetings.Read, "
+    "CallRecords.Read.All, Mail.Read, Tasks.Read, People.Read → Grant admin consent."
+)
 
 
 class GraphAPIProvider(CalendarProvider):
@@ -76,15 +85,15 @@ class GraphAPIProvider(CalendarProvider):
                 return None
 
             if response.status_code == 403:
-                raise PermissionError(
-                    f"Graph API returned 403 Forbidden for {url}. "
-                    "Check app permissions in Azure AD."
+                logger.error(
+                    "Graph API 403 for %s — permissions not granted. %s",
+                    url, _PERMISSIONS_GUIDE,
                 )
+                return None
 
             if response.status_code == 429:
                 retry_after = int(response.headers.get("Retry-After", "5"))
                 logger.warning("Graph API rate-limited; retrying after %ds", retry_after)
-                import asyncio
                 await asyncio.sleep(retry_after)
                 response = await client.get(url, headers=await self._headers_async(), params=params)
 

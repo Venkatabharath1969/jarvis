@@ -31,7 +31,7 @@ to a backend that reasons over live calendar + memory data and replies in spoken
    ├─ memory_agent        → pgvector semantic search (HNSW index)           │
    ├─ availability_agent  → Graph API calendarView OR PostgreSQL            │
    ├─ email_agent         → Graph API inbox     OR stub []                  │
-   └─ general_agent       → Gemini direct                                   │
+   └─ general_agent       → Groq (primary) / Gemini (fallback)              │
            │                                                                 │
            └────────────── compose_response (Gemini voice-English) ─────────┘
                                    │
@@ -128,9 +128,17 @@ jarvis/
 - `check_availability`: `GET /users/{upn}/calendarView?startDateTime=...&endDateTime=...`
 - `get_inbox_messages`: `GET /users/{upn}/mailFolders/inbox/messages`
 
-**Required Azure permissions (Application, admin-consented):**
-- `Calendars.Read`
-- `Mail.Read`
+**Required Azure permissions (Application type, admin-consented):**
+- `Calendars.Read` — read Outlook calendar events
+- `OnlineMeetings.Read` — read Teams meeting metadata
+- `CallRecords.Read.All` — access call records after meetings end
+- `OnlineMeetings.ReadTranscript.All` — read Teams transcriptions (auto-summarisation)
+- `Mail.Read` — read inbox messages
+- `Tasks.Read` — read Microsoft To-Do tasks
+- `People.Read` — read people/contacts
+
+**Status (2026-10-11):** Token acquisition working. All Graph API calls return 403.
+No application permissions have been granted admin consent in Azure Portal yet.
 
 ---
 

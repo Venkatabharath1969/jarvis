@@ -1,7 +1,7 @@
 # JARVIS Executive Assistant — Complete Context File
 # File: jarWithContext.fd
-# Version: 1.3.3
-# Date: 2026-10-10
+# Version: 1.4.0
+# Date: 2026-10-11
 # Coverage: 100% — all design decisions, architecture, code, deployment, caveats
 #
 # HOW TO USE THIS FILE IN A NEW SESSION:
@@ -477,9 +477,130 @@ v1.0.0 (2026-10-10):
   - 6-table schema with CEO seed data
 
 ## NEXT / PENDING
+# Last updated: 2026-10-11. Items are grouped by dependency and priority.
 
-- [ ] GitHub PAT with `workflow` scope → enable CI/CD push
-- [ ] Microsoft Graph live mode: set GRAPH_* vars, USE_MOCK_DATA=false
-- [ ] Amazon Polly Neural TTS upgrade (see backend docs)
-- [ ] AWS ECS/Fargate deployment option
+### BLOCKER — Microsoft Graph API (all live-calendar features blocked)
+
+CURRENT STATE (2026-10-11):
+  - Azure App Registration: DAI-GP9_ai-sdlc_AIDLC_AgenticAI_2592-2
+  - Tenant ID:     9652d7c2-1ccf-4940-8151-4a92bd474ed0
+  - Client ID:     0f3c9037-d646-4597-9377-57ac71718acb
+  - Client Secret: stored in .env (L0w8Q~...)
+  - User UPN:      deloitte.bharath@mercedes-benz.com
+  - Token acquisition: WORKING (MSAL client-credentials, 3600s expiry)
+  - Token roles:   [] (EMPTY — no application permissions granted)
+  - Graph API:     ALL CALLS RETURN 403 Forbidden
+
+WHAT IS NEEDED (Azure Portal — must be done by Azure AD admin):
+  Step 1: Go to https://portal.azure.com
+  Step 2: Azure Active Directory → App registrations
+  Step 3: Find app: "DAI-GP9_ai-sdlc_AIDLC_AgenticAI_2592-2"
+  Step 4: Click "API permissions" in the left panel
+  Step 5: Click "Add a permission" → Microsoft Graph → Application permissions
+  Step 6: Search and add these permissions:
+    - Calendars.Read                      (read Outlook calendar events)
+    - OnlineMeetings.Read                 (read Teams meeting metadata + attendance)
+    - CallRecords.Read.All                (access call records after meetings end)
+    - OnlineMeetings.ReadTranscript.All   (read Teams transcriptions for auto-summary)
+    - Mail.Read                           (read inbox messages)
+    - Tasks.Read                          (read Microsoft To-Do / Planner tasks)
+    - People.Read                         (read contacts/people in the organisation)
+  Step 7: Click "Grant admin consent for [tenant]" — required for Application permissions
+  Step 8: Verify the Status column shows green checkmarks
+
+  After admin consent:
+    - Update .env: USE_MOCK_DATA=false
+    - Restart: cd /root/jarvis && docker compose up -d backend
+    - Test: curl https://utilsnow.com/jarvis/health (should show mock_mode: false)
+
+TEAMS-SIDE SETTING (Teams Admin Center — separate from Azure Portal):
+  - Go to: https://admin.teams.microsoft.com
+  - Meetings → Meeting policies → (policy assigned to the user)
+  - Enable: "Allow cloud recording" = On
+  - Enable: "Allow transcription" = On
+  - Without this, CallRecords and Transcript APIs return empty even with permissions
+
+OPTIONAL GUID (7ce5db77-da43-4bf5-a033-0083db78c2b8):
+  - Tested against Graph API: returns 404 ErrorInvalidUser
+  - Not a valid user object in this tenant; may be a service principal or object from a different tenant
+  - Not needed for current implementation
+
+### FEATURES NOT YET IMPLEMENTED (require Graph permissions above)
+
+- [ ] Live Outlook calendar query (currently reads PostgreSQL seed data)
+- [ ] Live To-Do / action items from Microsoft Tasks
+- [ ] Live inbox email read
+- [ ] Teams meeting transcript ingestion and auto-summarisation
+      (POST-meeting flow: CallRecords webhook → fetch transcript → Groq summarise
+       → insert into meetings + meeting_chunks + action_items in PostgreSQL)
+- [ ] Graph change notification (webhook) subscription for real-time meeting-end trigger
+      Endpoint to build: POST /api/webhook/call-record
+- [ ] Availability check against live Teams calendar (free/busy)
+
+### INFRASTRUCTURE PENDING
+
+- [ ] GitHub PAT with `workflow` scope — needed to push .github/workflows/deploy.yml
+      Current PAT has no `workflow` scope; CI/CD file committed locally but excluded from push
+- [ ] Amazon Polly Neural TTS upgrade (see backend/docs/polly-upgrade.md)
+      Groq TTS or AWS Polly voices to replace browser/Android TTS
+- [ ] AWS ECS/Fargate deployment option (currently single VPS)
 - [ ] EAS signed release APK for Play Store distribution
+      (current APK uses debug keystore — not Play Store eligible)
+
+### NGINX FIX APPLIED (2026-10-11)
+
+Fixed: /jarvis/api/ proxy was routing to http://127.0.0.1:8001/ (dropped /api/ prefix)
+       → all REST endpoints returned 404 from public URLs
+Fix:   Changed proxy_pass to http://127.0.0.1:8001/api/
+Now:   /jarvis/api/meetings, /jarvis/api/action-items, /jarvis/api/people all return 200
+
+### MANAGER MESSAGE TEMPLATE
+
+Subject: Azure AD permissions required for JARVIS AI Assistant — live Microsoft 365 integration
+
+Hi [Manager's name],
+
+We have completed the JARVIS executive assistant backend and successfully connected
+it to your Azure app registration (DAI-GP9_ai-sdlc_AIDLC_AgenticAI_2592-2).
+
+The app can acquire a valid access token, but all Microsoft Graph API calls are
+currently blocked with "403 Insufficient privileges" because no API permissions
+have been granted to the application yet.
+
+To enable live calendar, meeting, and inbox access in read-only mode, we need an
+Azure AD admin to grant the following Application-type permissions and click
+"Grant admin consent":
+
+  In Azure Portal → Azure Active Directory → App registrations
+  → DAI-GP9_ai-sdlc_AIDLC_AgenticAI_2592-2 → API permissions:
+
+  MINIMUM (read-only calendar + meetings):
+  ✅ Microsoft Graph → Calendars.Read (Application)
+  ✅ Microsoft Graph → OnlineMeetings.Read (Application)
+
+  FOR FULL FUNCTIONALITY (recommended):
+  ✅ Microsoft Graph → CallRecords.Read.All (Application) — post-meeting transcripts
+  ✅ Microsoft Graph → OnlineMeetings.ReadTranscript.All (Application)
+  ✅ Microsoft Graph → Mail.Read (Application)
+  ✅ Microsoft Graph → Tasks.Read (Application)
+  ✅ Microsoft Graph → People.Read (Application)
+
+  After adding permissions: click "Grant admin consent for [tenant name]"
+
+  Additionally, in Teams Admin Center (admin.teams.microsoft.com):
+  → Meetings → Meeting policies → Enable "Allow cloud recording" and "Allow transcription"
+  for the user deloitte.bharath@mercedes-benz.com
+
+No code changes, no new software, and no new app registrations are needed.
+The credentials you have already shared are correct and the token is working.
+This is purely a permission grant step in the Azure Portal.
+
+Once these steps are done, JARVIS will automatically read your live Outlook calendar,
+Teams meetings, and inbox — in read-only mode only.
+
+Please let me know if you need the exact steps or if this can be escalated to
+the M365 tenant admin.
+
+Thank you,
+[Your name]
+
