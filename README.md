@@ -2,7 +2,7 @@
 
 A production-ready voice-only AI executive assistant for C-suite leadership. Always-on wake word detection, real-time speech recognition, semantic memory search, and natural voice responses — all within 2 seconds end-to-end.
 
-**Status**: v1.3.5 | ✅ Production Ready | 8/8 Query Types Verified | 12/12 Tests Passing
+**Status**: v1.4.0 | ✅ Production Ready | 11/11 API Endpoints Verified | All Intents Working
 
 ---
 
@@ -126,37 +126,58 @@ curl http://localhost:8001/health
 
 ## Deployment
 
-### Option 1: Deploy Your Own Backend (Recommended)
+### Option 1: Local Setup — Full Stack (Recommended)
+
+**Prerequisites**: Docker 24+, Git, 2 GB RAM free
 
 ```bash
-# Prerequisites
-- Linux server (Ubuntu 22.04+), 2 GB RAM
-- Docker 24+ with Compose
-
-# Deploy
+# 1. Clone the repo
 git clone https://github.com/Venkatabharath1969/jarvis.git
 cd jarvis
+
+# 2. Create your .env (never commit this file)
 cp .env.example .env
-# Edit .env: set POSTGRES_PASSWORD, GROQ_API_KEY
+
+# 3. Edit .env — minimum required values:
+#    POSTGRES_PASSWORD=any_secure_password
+#    GROQ_API_KEY=gsk_...    ← free from https://console.groq.com/ (1000 RPM)
+#    (leave USE_MOCK_DATA=true for local testing with seed data)
+
+# 4. Start backend + database
 docker compose up -d --build
 
-# Verify
+# 5. Verify it's running
 curl http://localhost:8001/health
-
-# Share APK with team
-# APK will be available at: http://<your-server-ip>:8001/app.apk
+# Expected: {"status":"ok","llm_provider":"groq","llm_configured":true}
 ```
 
-### Option 2: Docker Only (no git)
+**That's it.** The database is seeded automatically (21 meetings, 13 people, 10 tasks).
 
+**Test your queries via browser**: Open `http://localhost:8001/test`  
+Type any query (e.g. "What meetings today?") → see + hear the response.
+
+**REST APIs available locally**:
 ```bash
-docker run -d \
-  -e POSTGRES_PASSWORD=mysecurepass \
-  -e GROQ_API_KEY=gsk_... \
-  -p 8001:8000 \
-  -v postgres_data:/var/lib/postgresql/data \
-  jarvis:latest
+curl http://localhost:8001/api/meetings?days=14   # calendar events
+curl http://localhost:8001/api/action-items        # tasks
+curl http://localhost:8001/api/people              # contacts
 ```
+
+**To switch to live Microsoft 365 data** (after Azure permissions are granted):
+```bash
+# Add to .env:
+GRAPH_TENANT_ID=your-tenant-id
+GRAPH_CLIENT_ID=your-client-id
+GRAPH_CLIENT_SECRET=your-client-secret
+GRAPH_USER_UPN=user@your-org.com
+USE_MOCK_DATA=false
+
+# Restart to pick up new .env values
+docker compose up -d backend
+```
+
+> **Azure setup**: See `.env.example` for the 7 Graph API permissions required.
+> An Azure AD admin must grant Application-type admin consent in Azure Portal.
 
 ---
 
@@ -336,7 +357,8 @@ Your team can now:
 
 | Version | Date | Key Changes |
 |---------|------|------------|
-| **v1.3.5** | Oct 10, 2026 | Fix "tap mic" bug; add silence auto-stop |
+| **v1.4.0** | Oct 11, 2026 | Azure Graph credentials configured; nginx /api/ routing fixed; Groq-first in all agents; full NEXT/PENDING roadmap in context |
+| v1.3.5 | Oct 10, 2026 | Fix "tap mic" bug; add silence auto-stop |
 | v1.3.4 | Oct 10, 2026 | Fix black screen; TTS audio focus; permission caching |
 | v1.3.3 | Oct 10, 2026 | Switch to Groq LLM (1000 RPM) |
 | v1.3.0 | Oct 10, 2026 | Fix blank screen; TTS race; WebSocket queue |
@@ -366,5 +388,5 @@ Your team can now:
 ---
 
 **Status**: ✅ Production Ready  
-**Last Updated**: October 10, 2026  
-**Build**: 147
+**Last Updated**: October 11, 2026  
+**Build**: 148
