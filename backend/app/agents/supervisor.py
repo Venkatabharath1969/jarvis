@@ -159,7 +159,7 @@ def _extract_entities(query: str, agent_result: str) -> dict[str, str]:
 
     # Extract meeting title: first "- YYYY-MM-DD...: Title" pattern line
     meeting = ""
-    m = re.search(r"- \d{4}-\d{2}-\d{2}[^:]*: ([^\n(]+)", agent_result)
+    m = re.search(r"- \d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2})?[^a-zA-Z]*(?::\s*|\s*\|\s*)([^\n(|:]{3,})", agent_result)
     if m:
         meeting = m.group(1).strip()
 
@@ -261,7 +261,7 @@ async def classify_intent(state: JarvisState) -> dict[str, Any]:
         q_lower = query.lower()
         if any(w in q_lower for w in ("meeting", "calendar", "schedule", "agenda")):
             intent: IntentType = "calendar_query"
-        elif any(w in q_lower for w in ("action", "task", "todo", "follow-up", "followup")):
+        elif any(w in q_lower for w in ("action", "task", "todo", "follow-up", "followup", "overdue")):
             intent = "action_items"
         elif any(w in q_lower for w in ("remember", "search", "transcript", "what did", "who said")):
             intent = "memory_search"
