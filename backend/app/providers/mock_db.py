@@ -108,11 +108,11 @@ class MockDBProvider(CalendarProvider):
         self, query: str, limit: int = 5
     ) -> list[dict[str, Any]]:
         """
-        Vector similarity search over meeting_chunks.
-        Uses a zero-vector as placeholder until real embeddings are generated.
-        In v2 this will call an embedding model to vectorise *query* first.
+        Text-first search over meeting_chunks (mock mode — no real embedding model).
+        Tries keyword match on content + speaker; falls back to most-recent chunks.
+        Real vector similarity requires a proper embedding model (deferred to v3).
         """
-        sql = """
+        chunk_sql = """
             SELECT
                 mc.id,
                 mc.content,
@@ -122,38 +122,36 @@ class MockDBProvider(CalendarProvider):
                 m.meeting_date
             FROM meeting_chunks mc
             JOIN meetings m ON m.id = mc.meeting_id
-            WHERE mc.embedding IS NOT NULL
-            ORDER BY mc.embedding <=> $1::vector
-            LIMIT $2
+            WHERE mc.content ILIKE $1
+               OR mc.speaker ILIKE $2
+            ORDER BY m.meeting_date DESC
+            LIMIT $3
         """
+        # Build per-word keyword patterns for better recall
+        words = [w for w in query.lower().split() if len(w) > 3]
+        patterns = [f"%{query}%"] + [f"%{w}%" for w in words[:4]]
+
         try:
             async with self._pool.acquire() as conn:
-                rows = await conn.fetch(sql, _ZERO_VECTOR, limit)
-            return [dict(r) for r in rows]
-        except Exception:
-            logger.exception("semantic_search failed (falling back to keyword scan)")
-            # Graceful fallback: return most-recent chunks by text
-            fallback_sql = """
-                SELECT
-                    mc.id,
-                    mc.content,
-                    mc.speaker,
-                    mc.chunk_index,
-                    m.title        AS meeting_title,
-                    m.meeting_date
-                FROM meeting_chunks mc
-                JOIN meetings m ON m.id = mc.meeting_id
-                WHERE mc.content ILIKE $1
-                ORDER BY m.meeting_date DESC
-                LIMIT $2
-            """
-            try:
-                async with self._pool.acquire() as conn:
-                    rows = await conn.fetch(fallback_sql, f"%{query}%", limit)
+                # Try full-phrase match first, then individual words
+                for pat in patterns:
+                    rows = await conn.fetch(chunk_sql, pat, pat, limit)
+                    if rows:
+                        return [dict(r) for r in rows]
+                # Final fallback: most-recent chunks regardless of content
+                fallback_sql = """
+                    SELECT mc.id, mc.content, mc.speaker, mc.chunk_index,
+                           m.title AS meeting_title, m.meeting_date
+                    FROM meeting_chunks mc
+                    JOIN meetings m ON m.id = mc.meeting_id
+                    ORDER BY m.meeting_date DESC
+                    LIMIT $1
+                """
+                rows = await conn.fetch(fallback_sql, limit)
                 return [dict(r) for r in rows]
-            except Exception:
-                logger.exception("semantic_search fallback also failed")
-                return []
+        except Exception:
+            logger.exception("semantic_search failed")
+            return []
 
     async def check_availability(
         self, start: datetime, end: datetime
