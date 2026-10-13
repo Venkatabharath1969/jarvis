@@ -19,10 +19,12 @@ import { STORAGE_KEYS } from '../constants/config';
 import MicButton, { MicState } from '../components/MicButton';
 import MessageBubble from '../components/MessageBubble';
 import StatusDot from '../components/StatusDot';
+import SuggestionChips from '../components/SuggestionChips';
+import PrecisionRing from '../components/PrecisionRing';
 import { useWebSocket, WSMessage } from '../hooks/useWebSocket';
 import { useSpeech } from '../hooks/useSpeech';
 
-const PROCESSING_TIMEOUT_MS = 30_000; // show error if backend doesn't respond in 30s
+const PROCESSING_TIMEOUT_MS = 30_000;
 
 interface Message {
   id: string;
@@ -32,25 +34,21 @@ interface Message {
 }
 
 const STATUS_LABELS: Record<MicState, string> = {
-  idle: 'Tap to speak',
-  listening: 'Listening...',
-  processing: 'Processing...',
-  speaking: 'Speaking...',
+  idle: 'TAP TO SPEAK',
+  listening: 'LISTENING',
+  processing: 'PROCESSING',
+  speaking: 'SPEAKING',
 };
 
 const VoiceScreen: React.FC = () => {
   const [micState, setMicState] = useState<MicState>('idle');
   const [messages, setMessages] = useState<Message[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const scrollRef = useRef<ScrollView>(null);
-  // Start at 1 — the container is ALWAYS visible. The 800ms fade-in only runs once on
-  // very first mount. Setting initial value to 1 means if Android triggers onPause →
-  // onResume (e.g. STT overlay dismisses), the native animation driver NEVER resets
-  // this to 0 and makes the screen black.
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const fadeAnimStarted = useRef(false);
-  const headerGlow = useRef(new Animated.Value(0)).current;
   const processingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const micStateRef = useRef<MicState>('idle'); // mirror for use inside closures
+  const micStateRef = useRef<MicState>('idle');
 
   const { speak, stopSpeaking, isSpeaking, startListening, stopListening } = useSpeech();
 
@@ -59,24 +57,16 @@ const VoiceScreen: React.FC = () => {
     micStateRef.current = micState;
   }, [micState]);
 
-  // ── Animations ─────────────────────────────────────────────────────────
+  // Fade in on first mount only
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(headerGlow, { toValue: 1, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(headerGlow, { toValue: 0.4, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    ).start();
-    // Fade in from 0 → 1 on very first mount only
     if (!fadeAnimStarted.current) {
       fadeAnimStarted.current = true;
       fadeAnim.setValue(0);
-      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
+      Animated.timing(fadeAnim, { toValue: 1, duration: 900, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
     }
-  }, [fadeAnim, headerGlow]);
+  }, [fadeAnim]);
 
-  // Re-ensure opacity=1 when app comes back to foreground (STT overlay dismissal,
-  // permission dialog dismiss, or any other Android onPause → onResume cycle).
+  // Restore opacity on foreground
   useEffect(() => {
     const handleAppState = (next: AppStateStatus) => {
       if (next === 'active') {
@@ -88,14 +78,14 @@ const VoiceScreen: React.FC = () => {
     return () => sub.remove();
   }, [fadeAnim]);
 
-  // ── Sync isSpeaking → idle ──────────────────────────────────────────────
+  // Sync isSpeaking → idle; show chips after speaking ends
   useEffect(() => {
     if (!isSpeaking && micStateRef.current === 'speaking') {
       setMicState('idle');
     }
   }, [isSpeaking]);
 
-  // ── Processing timeout guard ────────────────────────────────────────────
+  // ── Processing timeout guard ─────────────────────────────────────────────
   const clearProcessingTimer = useCallback(() => {
     if (processingTimerRef.current) {
       clearTimeout(processingTimerRef.current);
@@ -115,7 +105,7 @@ const VoiceScreen: React.FC = () => {
     }, PROCESSING_TIMEOUT_MS);
   }, [clearProcessingTimer, speak]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Message management ──────────────────────────────────────────────────
+  // ── Message management ───────────────────────────────────────────────────
   const addMessage = useCallback((role: 'user' | 'assistant', text: string) => {
     if (!text.trim()) return;
     const msg: Message = {
@@ -132,23 +122,25 @@ const VoiceScreen: React.FC = () => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
   }, []);
 
-
-  // ── WebSocket message handler ───────────────────────────────────────────
+  // ── WebSocket message handler ────────────────────────────────────────────
   const handleWSMessage = useCallback((msg: WSMessage) => {
     clearProcessingTimer();
     if (msg.type === 'response' && typeof msg.text === 'string' && msg.text.trim()) {
+      const newSuggestions = Array.isArray(msg.suggestions) ? msg.suggestions as string[] : [];
       addMessage('assistant', msg.text);
+      setSuggestions(newSuggestions);
       setMicState('speaking');
       speak(msg.text);
     } else if (msg.type === 'error' && typeof msg.error === 'string') {
       const errText = `Sorry, I encountered an error: ${msg.error}`;
       addMessage('assistant', errText);
+      setSuggestions([]);
       setMicState('speaking');
       speak(errText);
     } else if (msg.type === 'response') {
-      // Empty/unexpected response
       const errText = "I didn't get a response. Please try again.";
       addMessage('assistant', errText);
+      setSuggestions([]);
       setMicState('speaking');
       speak(errText);
     }
@@ -156,7 +148,7 @@ const VoiceScreen: React.FC = () => {
 
   const { connectionStatus, sendQuery } = useWebSocket({ onMessage: handleWSMessage });
 
-  // ── Load saved messages on mount ────────────────────────────────────────
+  // ── Load saved messages on mount ─────────────────────────────────────────
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEYS.CONVERSATIONS)
       .then((raw) => {
@@ -168,50 +160,38 @@ const VoiceScreen: React.FC = () => {
       .catch(() => {});
   }, []);
 
-  // ── Mic button handler ──────────────────────────────────────────────────
+  // ── Mic button handler ───────────────────────────────────────────────────
   const handleMicPress = useCallback(async () => {
     if (micState === 'listening') {
-      // FIX: stopListening now resolves the pending startListening() promise immediately.
-      // The original coroutine resumes with the partial transcript and owns the rest of the flow.
       await stopListening();
       return;
     }
-
     if (micState === 'speaking') {
       stopSpeaking();
       setMicState('idle');
       return;
     }
-
     if (micState === 'processing') {
-      // Give haptic feedback so it doesn't feel dead
-      if (Platform.OS !== 'web') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
+      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return;
     }
-
-    // Guard: don't start recording when offline (sendQuery would silently drop)
     if (connectionStatus !== 'connected') {
       addMessage('assistant', 'JARVIS is offline. Please check your connection and try again.');
       return;
     }
+    if (Platform.OS !== 'web') await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    setSuggestions([]);
     setMicState('listening');
-
     const transcript = await startListening();
     if (!transcript) {
       setMicState('idle');
       addMessage('assistant', "I didn't catch that. Tap the microphone and try again.");
       return;
     }
-
     addMessage('user', transcript);
     setMicState('processing');
-    startProcessingTimer();        // ← guard: shows timeout error if backend hangs
+    startProcessingTimer();
 
     const sent = sendQuery(transcript);
     if (!sent) {
@@ -221,43 +201,52 @@ const VoiceScreen: React.FC = () => {
     }
   }, [micState, connectionStatus, startListening, stopListening, stopSpeaking, addMessage, sendQuery]);
 
-  // ── Status label color ─────────────────────────────────────────────────
-  const statusLabelColor =
+  // ── Suggestion chip tap ──────────────────────────────────────────────────
+  const handleSuggestionTap = useCallback(async (text: string) => {
+    if (connectionStatus !== 'connected') return;
+    if (Platform.OS !== 'web') await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSuggestions([]);
+    addMessage('user', text);
+    setMicState('processing');
+    startProcessingTimer();
+    const sent = sendQuery(text);
+    if (!sent) {
+      clearProcessingTimer();
+      setMicState('idle');
+      addMessage('assistant', 'Connection lost. Reconnecting — please try again in a moment.');
+    }
+  }, [connectionStatus, addMessage, sendQuery, startProcessingTimer, clearProcessingTimer]);
+
+  const statusColor =
     micState === 'listening' ? COLORS.accent2
     : micState === 'processing' ? COLORS.warning
-    : micState === 'speaking' ? COLORS.purple
-    : COLORS.textSecondary;
+    : micState === 'speaking' ? COLORS.gold
+    : COLORS.textMuted;
 
-  const headerGlowColor = headerGlow.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['rgba(0,173,239,0.4)', 'rgba(0,173,239,0.9)'],
-  });
+  const showChips = micState === 'idle' && suggestions.length > 0;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
 
-        {/* ── Header ── */}
+        {/* ── Header ─────────────────────────────────────────────────── */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Animated.Text style={[styles.logo, { color: headerGlowColor as unknown as string }]}>
-              J A R V I S
-            </Animated.Text>
-            <Text style={styles.subtitle}>Executive AI Assistant</Text>
+            <Text style={styles.logo}>J A R V I S</Text>
+            <View style={styles.logoRule} />
+            <Text style={styles.subtitle}>EXECUTIVE AI ASSISTANT</Text>
           </View>
           <View style={styles.headerRight}>
             <StatusDot status={connectionStatus} />
             <Text style={styles.connLabel}>
-              {connectionStatus === 'connected' ? 'Online'
-                : connectionStatus === 'connecting' ? 'Connecting'
-                : 'Offline'}
+              {connectionStatus === 'connected' ? 'ONLINE'
+                : connectionStatus === 'connecting' ? 'CONNECTING'
+                : 'OFFLINE'}
             </Text>
           </View>
         </View>
 
-        <View style={styles.divider} />
-
-        {/* ── Messages ── */}
+        {/* ── Messages ────────────────────────────────────────────────── */}
         <ScrollView
           ref={scrollRef}
           style={styles.messagesScroll}
@@ -268,10 +257,9 @@ const VoiceScreen: React.FC = () => {
           {messages.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>✦</Text>
-              <Text style={styles.emptyTitle}>JARVIS is ready</Text>
+              <Text style={styles.emptyTitle}>JARVIS IS READY</Text>
               <Text style={styles.emptySubtitle}>
-                Tap the microphone to give a voice command.{'\n'}
-                Your schedule, meetings, and briefings — all at once.
+                Tap the microphone or say{'\n'}"Hey Jarvis" to begin.
               </Text>
             </View>
           ) : (
@@ -286,20 +274,34 @@ const VoiceScreen: React.FC = () => {
           )}
         </ScrollView>
 
-        {/* ── Mic + status ── */}
+        {/* ── Suggestion chips ────────────────────────────────────────── */}
+        <SuggestionChips
+          suggestions={suggestions}
+          onSelect={handleSuggestionTap}
+          visible={showChips}
+        />
+
+        {/* ── Precision ring + mic ─────────────────────────────────────── */}
         <View style={styles.micSection}>
-          <View style={styles.micGlow}>
-            <MicButton state={micState} onPress={handleMicPress} />
+          <View style={styles.ringContainer}>
+            <PrecisionRing state={micState} size={220} />
+            <View style={styles.micOverlay}>
+              <View style={styles.micGlow}>
+                <MicButton state={micState} onPress={handleMicPress} />
+              </View>
+            </View>
           </View>
-          <Text style={[styles.statusLabel, { color: statusLabelColor }]}>
+
+          <Text style={[styles.statusLabel, { color: statusColor }]}>
             {STATUS_LABELS[micState]}
           </Text>
+
           {micState === 'speaking' && (
             <TouchableOpacity
               onPress={() => { stopSpeaking(); setMicState('idle'); }}
               style={styles.stopBtn}
             >
-              <Text style={styles.stopBtnText}>Stop</Text>
+              <Text style={styles.stopBtnText}>STOP</Text>
             </TouchableOpacity>
           )}
           {connectionStatus === 'disconnected' && micState === 'idle' && (
@@ -307,9 +309,10 @@ const VoiceScreen: React.FC = () => {
           )}
         </View>
 
-        {/* ── Bottom hint ── */}
+        {/* ── Bottom rule ─────────────────────────────────────────────── */}
+        <View style={styles.bottomRule} />
         <View style={styles.bottomHint}>
-          <Text style={styles.hintText}>History  ·  Settings</Text>
+          <Text style={styles.hintText}>HISTORY  ·  SETTINGS</Text>
         </View>
 
       </Animated.View>
@@ -329,28 +332,28 @@ const styles = StyleSheet.create({
     paddingTop: SIZES.md,
     paddingBottom: SIZES.sm,
   },
-  headerLeft: { flex: 1 },
+  headerLeft: { flex: 1, gap: 3 },
   logo: {
-    fontSize: FONTS.sizes.xl,
+    fontSize: FONTS.sizes.lg,
     fontWeight: FONTS.weights.extraBold,
-    letterSpacing: 8,
-    color: COLORS.accent,
+    letterSpacing: 10,
+    color: COLORS.platinum,
+  },
+  logoRule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.gold,
+    opacity: 0.55,
+    marginRight: SIZES.xxl,
+    marginTop: 2,
   },
   subtitle: {
-    fontSize: FONTS.sizes.xs,
-    color: COLORS.textSecondary,
-    letterSpacing: 2,
-    marginTop: 2,
-    textTransform: 'uppercase',
+    fontSize: 8,
+    color: COLORS.textMuted,
+    letterSpacing: 3,
+    fontWeight: FONTS.weights.semiBold,
   },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: SIZES.xs },
-  connLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, letterSpacing: 1 },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: COLORS.border,
-    marginHorizontal: SIZES.lg,
-    marginBottom: SIZES.sm,
-  },
+  connLabel: { fontSize: 9, color: COLORS.textMuted, letterSpacing: 1.5 },
 
   messagesScroll: { flex: 1 },
   messagesContent: { paddingVertical: SIZES.sm, flexGrow: 1 },
@@ -362,54 +365,64 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIZES.xxl,
     paddingTop: SIZES.xxxl,
   },
-  emptyIcon: { fontSize: 32, color: COLORS.accent, marginBottom: SIZES.md },
+  emptyIcon: { fontSize: 24, color: COLORS.gold, marginBottom: SIZES.md, opacity: 0.7 },
   emptyTitle: {
-    fontSize: FONTS.sizes.lg,
+    fontSize: FONTS.sizes.sm,
     fontWeight: FONTS.weights.semiBold,
-    color: COLORS.textPrimary,
+    color: COLORS.platinum,
     marginBottom: SIZES.sm,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+    letterSpacing: 3.5,
   },
   emptySubtitle: {
-    fontSize: FONTS.sizes.sm,
+    fontSize: FONTS.sizes.xs,
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+    letterSpacing: 0.5,
   },
 
   micSection: {
     alignItems: 'center',
-    paddingVertical: SIZES.xl,
     paddingBottom: SIZES.lg,
   },
+  ringContainer: {
+    width: 220,
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SIZES.md,
+  },
+  micOverlay: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   micGlow: {
-    shadowColor: COLORS.accent,
+    shadowColor: COLORS.gold,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 30,
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
     elevation: 10,
-    marginBottom: SIZES.lg,
   },
   statusLabel: {
-    fontSize: FONTS.sizes.sm,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    fontWeight: FONTS.weights.medium,
+    fontSize: 9,
+    letterSpacing: 3,
+    fontWeight: FONTS.weights.semiBold,
+    marginBottom: SIZES.xs,
   },
   stopBtn: {
     marginTop: SIZES.sm,
     paddingHorizontal: SIZES.lg,
     paddingVertical: SIZES.xs + 2,
-    borderRadius: SIZES.radiusFull,
-    borderWidth: 1,
+    borderRadius: 2,
+    borderWidth: 0.5,
     borderColor: COLORS.danger,
   },
   stopBtnText: {
     color: COLORS.danger,
-    fontSize: FONTS.sizes.sm,
-    fontWeight: FONTS.weights.medium,
-    letterSpacing: 1,
+    fontSize: 9,
+    fontWeight: FONTS.weights.semiBold,
+    letterSpacing: 2,
   },
   offlineHint: {
     marginTop: SIZES.xs,
@@ -418,12 +431,18 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  bottomHint: { alignItems: 'center', paddingBottom: SIZES.md },
+  bottomRule: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.border,
+    marginHorizontal: SIZES.lg,
+    opacity: 0.5,
+  },
+  bottomHint: { alignItems: 'center', paddingVertical: SIZES.sm },
   hintText: {
-    fontSize: FONTS.sizes.xs,
+    fontSize: 8,
     color: COLORS.textMuted,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+    letterSpacing: 2.5,
+    fontWeight: FONTS.weights.medium,
   },
 });
 

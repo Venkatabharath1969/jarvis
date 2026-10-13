@@ -1,24 +1,35 @@
 export const COLORS = {
-  // Backgrounds
-  background: '#0A0A0A',
-  surface: '#141418',
-  surfaceElevated: '#1C1C22',
+  // Backgrounds — deep OLED blacks, AMG Night Edition
+  background: '#070709',
+  surface: '#0E0E12',
+  surfaceElevated: '#16161C',
+  surfaceGlass: 'rgba(255,255,255,0.04)',
 
-  // Borders
-  border: '#2a2a35',
-  borderSubtle: '#1e1e28',
+  // Borders — platinum-fine lines
+  border: '#232330',
+  borderSubtle: '#18181F',
+  borderGold: 'rgba(196,160,92,0.35)',
 
   // Text
-  textPrimary: '#E0E0E0',
-  textSecondary: '#888888',
-  textMuted: '#555555',
+  textPrimary: '#EEF0F4',
+  textSecondary: '#7A7D8C',
+  textMuted: '#3E4050',
 
-  // Accents
+  // Primary accent — Mercedes silver-blue
   accent: '#00ADEF',
   accentDark: '#0090cc',
-  accentDeep: '#005f8a',
+  accentDeep: '#003B66',
   accent2: '#00D4AA',
   accent2Dark: '#00a882',
+
+  // Gold accent — active state, premium highlight (AMG badge #C9A84C)
+  gold: '#C9A84C',
+  goldDim: 'rgba(201,168,76,0.18)',
+  goldGlow: 'rgba(201,168,76,0.08)',
+
+  // Platinum — idle ring, fine lines
+  platinum: '#B8C2CC',
+  platinumDim: 'rgba(184,194,204,0.12)',
 
   // Status
   danger: '#FF4466',
@@ -33,27 +44,33 @@ export const COLORS = {
   purpleBg: 'rgba(136, 85, 255, 0.15)',
 
   // User bubble bg
-  userBubble: '#005f8a',
-  userBubbleBorder: '#0090cc',
+  userBubble: '#003B66',
+  userBubbleBorder: '#005f8a',
 
   // Assistant bubble bg
-  assistantBubble: '#141418',
-  assistantBubbleBorder: '#2a2a35',
+  assistantBubble: '#0E0E12',
+  assistantBubbleBorder: '#232330',
 
   // Mic button
-  micRing: 'rgba(0, 173, 239, 0.2)',
-  micRingOuter: 'rgba(0, 173, 239, 0.08)',
-  micListening: 'rgba(0, 212, 170, 0.25)',
+  micRing: 'rgba(0, 173, 239, 0.18)',
+  micRingOuter: 'rgba(0, 173, 239, 0.06)',
+  micListening: 'rgba(0, 212, 170, 0.22)',
+
+  // Suggestion chips
+  chipBg: 'rgba(201,168,76,0.07)',
+  chipBorder: 'rgba(201,168,76,0.28)',
+  chipText: '#C9A84C',
+  chipTextDim: 'rgba(201,168,76,0.6)',
 
   // Overlay
-  overlay: 'rgba(0, 0, 0, 0.6)',
+  overlay: 'rgba(0, 0, 0, 0.7)',
   white: '#FFFFFF',
   black: '#000000',
   transparent: 'transparent',
 } as const;
 
 export const FONTS = {
-  regular: undefined, // Uses system default
+  regular: undefined,
   medium: undefined,
   bold: undefined,
   sizes: {
@@ -102,6 +119,10 @@ export const SIZES = {
 
   // Messages
   bubbleMaxWidth: '80%' as const,
+
+  // Suggestion chips
+  chipHeight: 34,
+  chipPaddingH: 14,
 } as const;
 
 export type ThemeColors = typeof COLORS;

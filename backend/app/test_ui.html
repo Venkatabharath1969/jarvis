@@ -3,223 +3,327 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JARVIS — Browser Test UI</title>
+<title>JARVIS — Executive AI Assistant</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #070709;
+    --surface:  #0E0E12;
+    --border:   #232330;
+    --text:     #EEF0F4;
+    --muted:    #3E4050;
+    --secondary:#7A7D8C;
+    --platinum: #B8C2CC;
+    --gold:     #C9A84C;
+    --gold-dim: rgba(201,168,76,0.18);
+    --gold-glow:rgba(201,168,76,0.08);
+    --accent:   #00ADEF;
+    --danger:   #FF4466;
+    --chip-bg:  rgba(201,168,76,0.07);
+    --chip-brd: rgba(201,168,76,0.28);
+  }
+
   body {
-    background: #0A0E1A;
-    color: #E0E6F0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
     height: 100vh;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
   }
+
+  /* ── Header ─────────────────────────────────────────────────────── */
   header {
-    padding: 16px 24px;
-    border-bottom: 1px solid #1E2A3A;
+    padding: 14px 24px 12px;
+    border-bottom: 0.5px solid var(--border);
     display: flex;
     align-items: center;
     gap: 16px;
+    flex-shrink: 0;
   }
+  .header-left { display: flex; flex-direction: column; gap: 3px; }
   header h1 {
-    font-size: 18px;
-    letter-spacing: 6px;
-    color: #00ADEF;
+    font-size: 16px;
+    letter-spacing: 9px;
+    color: var(--platinum);
     font-weight: 800;
   }
-  header span {
-    font-size: 11px;
-    color: #6B7A99;
-    letter-spacing: 2px;
+  .logo-rule {
+    height: 0.5px;
+    background: var(--gold);
+    opacity: 0.5;
+    width: 120px;
+    margin-top: 1px;
+  }
+  .subtitle {
+    font-size: 8px;
+    color: var(--muted);
+    letter-spacing: 3px;
     text-transform: uppercase;
+    font-weight: 600;
   }
   #status-dot {
-    width: 9px; height: 9px;
+    width: 7px; height: 7px;
     border-radius: 50%;
-    background: #444;
+    background: var(--muted);
     margin-left: auto;
     flex-shrink: 0;
     transition: background 0.3s;
   }
-  #status-dot.connected { background: #00ADEF; box-shadow: 0 0 8px #00ADEF88; }
-  #status-dot.disconnected { background: #FF4466; }
-  #status-label { font-size: 11px; color: #6B7A99; letter-spacing: 1px; }
+  #status-dot.connected { background: var(--accent); box-shadow: 0 0 8px rgba(0,173,239,0.55); }
+  #status-dot.disconnected { background: var(--danger); }
+  #status-label { font-size: 9px; color: var(--secondary); letter-spacing: 1.5px; text-transform: uppercase; }
 
+  /* ── Messages ────────────────────────────────────────────────────── */
   #messages {
     flex: 1;
     overflow-y: auto;
-    padding: 16px 24px;
+    padding: 12px 20px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
   }
   .msg {
     max-width: 72%;
-    padding: 10px 14px;
-    border-radius: 12px;
-    font-size: 14px;
-    line-height: 1.5;
-    animation: fadeIn 0.2s ease;
+    border-radius: 2px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    animation: fadeUp 0.22s ease;
+    overflow: hidden;
+    display: flex;
   }
-  @keyframes fadeIn { from { opacity:0; transform:translateY(4px);} to { opacity:1; transform:none;} }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none;} }
+
+  .msg-accent { width: 1.5px; background: var(--gold); opacity: 0.6; flex-shrink: 0; }
+  .msg-body { padding: 8px 12px; flex: 1; }
+  .msg-label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; opacity: 0.5; }
+
   .msg.user {
     align-self: flex-end;
-    background: #0D2137;
-    border: 1px solid #00ADEF44;
-    color: #C8D8EE;
+    background: #003B66;
+    border: 0.5px solid #005f8a;
+    flex-direction: row-reverse;
   }
+  .msg.user .msg-accent { background: var(--accent); }
+  .msg.user .msg-label { color: var(--accent); }
+
   .msg.assistant {
     align-self: flex-start;
-    background: #141E2E;
-    border: 1px solid #1E2A3A;
-    color: #E0E6F0;
+    background: var(--surface);
+    border: 0.5px solid var(--border);
   }
+  .msg.assistant .msg-label { color: var(--gold); }
+
   .msg.error {
     align-self: flex-start;
-    background: #2A0D14;
-    border: 1px solid #FF4466;
-    color: #FF9999;
+    background: #1A0810;
+    border: 0.5px solid var(--danger);
   }
   .msg.system {
     align-self: center;
     background: transparent;
     border: none;
-    color: #4A5A72;
-    font-size: 12px;
-  }
-  .msg-label {
-    font-size: 10px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-    opacity: 0.6;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    max-width: 100%;
   }
 
+  /* ── Thinking ────────────────────────────────────────────────────── */
   #thinking {
     display: none;
     align-self: flex-start;
-    padding: 10px 14px;
-    background: #141E2E;
-    border: 1px solid #1E2A3A;
-    border-radius: 12px;
-    color: #6B7A99;
-    font-size: 13px;
-    letter-spacing: 1px;
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-left: 1.5px solid var(--gold);
+    border-radius: 2px;
+    color: var(--secondary);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin: 0 20px;
+    animation: fadeUp 0.2s ease;
   }
-  #thinking.active { display: block; }
+  #thinking.active { display: flex; gap: 6px; align-items: center; }
   .dot-anim span {
     display: inline-block;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--gold);
     animation: bounce 1.2s infinite;
   }
   .dot-anim span:nth-child(2) { animation-delay: 0.2s; }
   .dot-anim span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} }
+  @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-4px)} }
 
-  footer {
-    padding: 14px 24px;
-    border-top: 1px solid #1E2A3A;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-  #input {
-    flex: 1;
-    background: #141E2E;
-    border: 1px solid #1E2A3A;
-    border-radius: 8px;
-    color: #E0E6F0;
-    font-size: 14px;
-    padding: 10px 14px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  #input:focus { border-color: #00ADEF55; }
-  #input::placeholder { color: #3A4A5F; }
-  #send-btn {
-    background: #00ADEF;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 20px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    letter-spacing: 0.5px;
-    transition: opacity 0.2s;
-  }
-  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  .quick-queries {
-    padding: 0 24px 10px;
-    display: flex;
-    flex-wrap: wrap;
+  /* ── Suggestion chips ────────────────────────────────────────────── */
+  #suggestions {
+    display: none;
+    flex-direction: column;
     gap: 6px;
+    padding: 8px 20px 6px;
+    flex-shrink: 0;
   }
-  .quick-btn {
-    font-size: 11px;
-    padding: 5px 10px;
-    border-radius: 20px;
-    border: 1px solid #1E3A55;
-    background: #0D2137;
-    color: #6BA8CC;
+  #suggestions.visible { display: flex; }
+  .suggest-label {
+    font-size: 8px;
+    letter-spacing: 2.5px;
+    color: var(--gold);
+    opacity: 0.5;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .chips-row {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+  .chip {
+    display: flex;
+    align-items: center;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 2px;
+    border: 0.5px solid var(--chip-brd);
+    background: var(--chip-bg);
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
+    font-size: 11px;
+    color: var(--gold);
     letter-spacing: 0.3px;
+    font-weight: 500;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.15s, border-color 0.15s;
+    animation: chipIn 0.25s ease both;
   }
-  .quick-btn:hover { background: #1A3A5A; border-color: #00ADEF88; color: #00ADEF; }
+  .chip::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 5px; bottom: 5px;
+    width: 1.5px;
+    background: var(--gold);
+    border-radius: 1px;
+  }
+  .chip:hover { background: rgba(201,168,76,0.14); border-color: rgba(201,168,76,0.5); }
+  @keyframes chipIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 
+  /* ── WS URL row ──────────────────────────────────────────────────── */
   #ws-url-row {
-    padding: 8px 24px;
-    border-bottom: 1px solid #1E2A3A;
+    padding: 6px 20px;
+    border-bottom: 0.5px solid var(--border);
     display: flex;
     gap: 8px;
     align-items: center;
+    flex-shrink: 0;
   }
-  #ws-url-row label { font-size: 11px; color: #4A5A72; letter-spacing: 1px; flex-shrink: 0; }
+  #ws-url-row label { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; flex-shrink: 0; }
   #ws-url {
     flex: 1;
-    background: #141E2E;
-    border: 1px solid #1E2A3A;
-    border-radius: 6px;
-    color: #8BA8C8;
-    font-size: 12px;
-    padding: 5px 10px;
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 2px;
+    color: var(--secondary);
+    font-size: 11px;
+    padding: 4px 9px;
     outline: none;
-    font-family: monospace;
+    font-family: 'SF Mono', 'Fira Code', monospace;
   }
   #connect-btn {
     background: transparent;
-    border: 1px solid #00ADEF;
-    color: #00ADEF;
-    border-radius: 6px;
-    padding: 5px 14px;
-    font-size: 12px;
+    border: 0.5px solid var(--gold);
+    color: var(--gold);
+    border-radius: 2px;
+    padding: 4px 12px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     cursor: pointer;
+    transition: background 0.15s;
   }
-  #connect-btn:hover { background: #00ADEF22; }
+  #connect-btn:hover { background: var(--gold-dim); }
+
+  /* ── Quick queries ───────────────────────────────────────────────── */
+  .quick-queries {
+    padding: 6px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    border-bottom: 0.5px solid var(--border);
+    flex-shrink: 0;
+  }
+  .quick-btn {
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 2px;
+    border: 0.5px solid rgba(184,194,204,0.2);
+    background: transparent;
+    color: var(--secondary);
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .quick-btn:hover { background: rgba(184,194,204,0.08); border-color: var(--platinum); color: var(--platinum); }
+
+  /* ── Footer / input ──────────────────────────────────────────────── */
+  footer {
+    padding: 10px 20px;
+    border-top: 0.5px solid var(--border);
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  #input {
+    flex: 1;
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: 2px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 9px 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  #input:focus { border-color: rgba(201,168,76,0.45); }
+  #input::placeholder { color: var(--muted); }
+  #send-btn {
+    background: var(--gold);
+    color: var(--bg);
+    border: none;
+    border-radius: 2px;
+    padding: 9px 20px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  #send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  #send-btn:not(:disabled):hover { opacity: 0.88; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>J A R V I S</h1>
-  <span>Executive AI Assistant — Browser Test</span>
+  <div class="header-left">
+    <h1>J A R V I S</h1>
+    <div class="logo-rule"></div>
+    <span class="subtitle">Executive AI Assistant</span>
+  </div>
   <div id="status-dot" class="disconnected"></div>
-  <span id="status-label">Disconnected</span>
+  <span id="status-label">OFFLINE</span>
 </header>
 
 <div id="ws-url-row">
-  <label>WS:</label>
-  <input id="ws-url" type="text" value="" placeholder="ws://localhost:8001/ws" />
+  <label>WS</label>
+  <input id="ws-url" type="text" value="" placeholder="wss://host/ws" />
   <button id="connect-btn" onclick="reconnect()">Connect</button>
-</div>
-
-<div id="messages">
-  <div class="msg system">Type a query below or tap a quick button to test JARVIS.</div>
-</div>
-
-<div id="thinking" class="dot-anim">
-  Processing <span>•</span><span>•</span><span>•</span>
 </div>
 
 <div class="quick-queries">
@@ -228,117 +332,161 @@
   <button class="quick-btn" onclick="sendQuick(this)">Am I free tomorrow at 2pm?</button>
   <button class="quick-btn" onclick="sendQuick(this)">What are my overdue action items?</button>
   <button class="quick-btn" onclick="sendQuick(this)">Tell me about the 1:1 with Bharath.</button>
-  <button class="quick-btn" onclick="sendQuick(this)">Who is Klaus Weber?</button>
+  <button class="quick-btn" onclick="sendQuick(this)">Is Bharath available next week?</button>
+</div>
+
+<div id="messages">
+  <div class="msg system">Ask JARVIS anything. Suggested follow-ups appear below each response.</div>
+</div>
+
+<div id="thinking" class="dot-anim">
+  Processing <span>•</span><span>•</span><span>•</span>
+</div>
+
+<div id="suggestions">
+  <span class="suggest-label">Suggested</span>
+  <div class="chips-row" id="chips-row"></div>
 </div>
 
 <footer>
   <input id="input" type="text" placeholder="Ask JARVIS anything…" autocomplete="off" />
-  <button id="send-btn" onclick="sendMsg()" disabled>Send</button>
+  <button id="send-btn" onclick="sendMsg()" disabled>SEND</button>
 </footer>
 
 <script>
   let ws = null;
-  let waitingForResponse = false;
+  let waiting = false;
 
-  const msgBox = document.getElementById('messages');
-  const thinking = document.getElementById('thinking');
-  const sendBtn = document.getElementById('send-btn');
-  const input = document.getElementById('input');
-  const dot = document.getElementById('status-dot');
-  const statusLabel = document.getElementById('status-label');
-  const wsUrlInput = document.getElementById('ws-url');
+  const msgBox    = document.getElementById('messages');
+  const thinking  = document.getElementById('thinking');
+  const sendBtn   = document.getElementById('send-btn');
+  const input     = document.getElementById('input');
+  const dot       = document.getElementById('status-dot');
+  const statusLbl = document.getElementById('status-label');
+  const suggs     = document.getElementById('suggestions');
+  const chipsRow  = document.getElementById('chips-row');
+  const wsInput   = document.getElementById('ws-url');
 
-  // Derive WS URL from page origin
   const defaultWsUrl = location.protocol === 'https:'
     ? 'wss://' + location.host + '/ws'
     : 'ws://' + location.host + '/ws';
-  wsUrlInput.value = defaultWsUrl;
+  wsInput.value = defaultWsUrl;
 
   function setStatus(s) {
     dot.className = s;
-    statusLabel.textContent = s.charAt(0).toUpperCase() + s.slice(1);
-    sendBtn.disabled = (s !== 'connected');
+    statusLbl.textContent = s.toUpperCase();
+    sendBtn.disabled = s !== 'connected';
   }
 
   function addMsg(role, text) {
+    hideSuggestions();
     const d = document.createElement('div');
     d.className = 'msg ' + role;
-    if (role !== 'system') {
+    if (role === 'system') {
+      d.textContent = text;
+    } else {
+      const accent = document.createElement('div');
+      accent.className = 'msg-accent';
+      const body = document.createElement('div');
+      body.className = 'msg-body';
       const lbl = document.createElement('div');
       lbl.className = 'msg-label';
-      lbl.textContent = role === 'user' ? 'You' : (role === 'error' ? 'Error' : 'JARVIS');
-      d.appendChild(lbl);
+      lbl.textContent = role === 'user' ? 'You' : role === 'error' ? 'Error' : 'JARVIS';
+      const t = document.createElement('div');
+      t.textContent = text;
+      body.appendChild(lbl);
+      body.appendChild(t);
+      d.appendChild(accent);
+      d.appendChild(body);
     }
-    const t = document.createElement('div');
-    t.textContent = text;
-    d.appendChild(t);
     msgBox.appendChild(d);
     msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  function showSuggestions(chips) {
+    if (!chips || chips.length === 0) return;
+    chipsRow.innerHTML = '';
+    chips.forEach((text, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'chip';
+      btn.style.animationDelay = (i * 70) + 'ms';
+      btn.textContent = text;
+      btn.onclick = () => {
+        input.value = text;
+        sendMsg();
+      };
+      chipsRow.appendChild(btn);
+    });
+    suggs.classList.add('visible');
+  }
+
+  function hideSuggestions() {
+    suggs.classList.remove('visible');
+    chipsRow.innerHTML = '';
   }
 
   function connect(url) {
     if (ws) { ws.onclose = null; ws.close(); ws = null; }
     setStatus('connecting');
-    try {
-      ws = new WebSocket(url);
-    } catch(e) {
-      setStatus('disconnected');
-      addMsg('error', 'Invalid WebSocket URL: ' + e.message);
-      return;
-    }
+    try { ws = new WebSocket(url); }
+    catch(e) { setStatus('disconnected'); addMsg('error', 'Invalid WS URL: ' + e.message); return; }
+
     ws.onopen = () => {
       setStatus('connected');
-      addMsg('system', 'Connected to JARVIS backend.');
+      addMsg('system', 'Connected to JARVIS.');
     };
+
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
+      if (data.type === 'pong') return;
       thinking.classList.remove('active');
-      waitingForResponse = false;
+      waiting = false;
       if (data.type === 'response' && data.text) {
         addMsg('assistant', data.text);
-        if ('speechSynthesis' in window && data.text) {
+        if (data.suggestions && data.suggestions.length > 0) {
+          showSuggestions(data.suggestions);
+        }
+        if ('speechSynthesis' in window) {
           const utt = new SpeechSynthesisUtterance(data.text.slice(0, 300));
-          utt.rate = 0.95; utt.pitch = 1.0;
+          utt.rate = 0.93; utt.pitch = 1.0;
           speechSynthesis.speak(utt);
         }
       } else if (data.type === 'error') {
         addMsg('error', data.text || data.error || 'Unknown error');
       }
     };
+
     ws.onerror = () => {};
     ws.onclose = () => {
       setStatus('disconnected');
       thinking.classList.remove('active');
-      waitingForResponse = false;
-      setTimeout(() => connect(wsUrlInput.value), 4000);
+      waiting = false;
+      setTimeout(() => connect(wsInput.value), 4000);
     };
   }
 
-  function reconnect() {
-    connect(wsUrlInput.value.trim() || defaultWsUrl);
-  }
+  function reconnect() { connect(wsInput.value.trim() || defaultWsUrl); }
 
   function sendMsg() {
     const text = input.value.trim();
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    hideSuggestions();
     addMsg('user', text);
     input.value = '';
     thinking.classList.add('active');
-    waitingForResponse = true;
-    ws.send(JSON.stringify({ type: 'query', text }));
     msgBox.scrollTop = msgBox.scrollHeight;
-    // 30s local timeout
+    waiting = true;
+    ws.send(JSON.stringify({ type: 'query', text }));
     setTimeout(() => {
-      if (waitingForResponse) {
+      if (waiting) {
         thinking.classList.remove('active');
-        waitingForResponse = false;
-        addMsg('error', 'Request timed out after 30 seconds. The backend may be slow or the Gemini quota exhausted.');
+        waiting = false;
+        addMsg('error', 'Request timed out after 30 seconds.');
       }
     }, 30000);
   }
 
   function sendQuick(btn) { input.value = btn.textContent; sendMsg(); }
-
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMsg(); });
 
   connect(defaultWsUrl);

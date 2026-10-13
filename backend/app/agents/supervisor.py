@@ -14,10 +14,13 @@ Flow:
       +--schedule_meeting  --> general_agent   (v1: handled by general LLM)
       +--general           --> general_agent
                                      |
-                               compose_response --> END
+                               compose_response
+                                     |
+                               generate_suggestions --> END
 """
 
 import json
+import re
 from datetime import datetime, timezone
 import logging
 from typing import Annotated, Any, Literal
@@ -56,6 +59,154 @@ class JarvisState(TypedDict):
     intent: str
     agent_result: str
     final_response: str
+    suggestions: list[str]
+    data_source: str
+    subject_person: str
+    session_context: list[dict]
+
+
+# --------------------------------------------------------------------------- #
+# People name cache (loaded at init_graph time)
+# --------------------------------------------------------------------------- #
+
+_people_names_cache: set[str] = set()
+
+
+async def _load_people_cache() -> None:
+    """Pre-load all people names into module-level cache for fast entity extraction."""
+    global _people_names_cache
+    try:
+        provider = get_provider()
+        people = await provider.get_people()
+        _people_names_cache = {p["name"] for p in people if p.get("name")}
+        logger.info("People name cache loaded: %d names", len(_people_names_cache))
+    except Exception:
+        logger.warning("Could not load people cache — entity extraction degraded")
+
+
+# --------------------------------------------------------------------------- #
+# Suggestion templates
+# --------------------------------------------------------------------------- #
+
+class _SafeMap(dict):
+    """Returns empty string for missing keys so str.format_map never raises."""
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+_SUGGESTION_TEMPLATES: dict[str, list[str]] = {
+    "calendar_query": [
+        "What is {meeting} about?",
+        "Who is attending {meeting}?",
+        "What were the action items from {meeting}?",
+        "Do I have anything with {person} this week?",
+        "What's on my schedule tomorrow?",
+        "Who do I have back-to-back meetings with?",
+    ],
+    "action_items": [
+        "Which action items are overdue?",
+        "What did {person} commit to?",
+        "Show me critical priority items only.",
+        "What should I focus on today?",
+        "Which items are due this week?",
+    ],
+    "memory_search": [
+        "What did {person} say about that?",
+        "What were the key decisions made?",
+        "Who disagreed in that discussion?",
+        "What commitments were made?",
+        "Search for anything about Project Delta.",
+    ],
+    "availability_query": [
+        "Is {person} free tomorrow morning?",
+        "When is my next free slot this week?",
+        "What is {person} working on next week?",
+        "Can we schedule a 30-minute call with {person}?",
+        "Am I free Friday afternoon?",
+    ],
+    "email_query": [
+        "Any emails from {person}?",
+        "What are my unread messages?",
+        "Do I need to respond to anything urgent?",
+        "Check for messages about Project Delta.",
+    ],
+    "schedule_meeting": [
+        "When is {person} available next week?",
+        "What should I prepare for the meeting?",
+        "Who else should attend?",
+        "Set a 30-minute slot with {person}.",
+    ],
+    "general": [
+        "What meetings do I have today?",
+        "What are my overdue action items?",
+        "What should I prioritize today?",
+        "Summarise my week.",
+    ],
+}
+
+
+def _extract_entities(query: str, agent_result: str) -> dict[str, str]:
+    """Extract person name and meeting title from query + result for slot filling."""
+    combined = f"{query} {agent_result}".lower()
+
+    # Sort by length descending — prefer "Bharath Kumar" over "Bharath"
+    sorted_names = sorted(_people_names_cache, key=len, reverse=True)
+    person = ""
+    for name in sorted_names:
+        if name.lower() in combined:
+            person = name
+            break
+
+    # Extract meeting title: first "- YYYY-MM-DD...: Title" pattern line
+    meeting = ""
+    m = re.search(r"- \d{4}-\d{2}-\d{2}[^:]*: ([^\n(]+)", agent_result)
+    if m:
+        meeting = m.group(1).strip()
+
+    return {"person": person, "meeting": meeting}
+
+
+def _generate_suggestions_from_state(
+    intent: str, query: str, agent_result: str, session_context: list[dict]
+) -> list[str]:
+    """Generate 3-4 contextual follow-up suggestions from templates."""
+    templates = _SUGGESTION_TEMPLATES.get(intent, _SUGGESTION_TEMPLATES["general"])
+    entities = _extract_entities(query, agent_result)
+
+    # Also check the last turn context for a fallback person
+    if not entities["person"] and session_context:
+        last = session_context[-1]
+        entities["person"] = last.get("person", "")
+        entities["meeting"] = entities.get("meeting") or last.get("meeting", "")
+
+    slot_map = _SafeMap(entities)
+    results: list[str] = []
+
+    for tmpl in templates:
+        filled = tmpl.format_map(slot_map)
+        # Drop any unfilled slot placeholder leaking through
+        if "{" in filled:
+            continue
+        # Drop suggestions with empty entity slots (double-space or trailing preposition)
+        if "  " in filled:
+            continue
+        stripped = filled.rstrip(" .,?")
+        if stripped.endswith(("with", "from", "about", "for", "meeting", "of")):
+            continue
+        # Skip if the filled value ends with a bare "?" after an entity slot was empty
+        if filled.endswith(" ?") or filled.endswith("?") and filled[-3:-1] == "  ":
+            continue
+        results.append(filled)
+
+    # If entity-filled suggestions are too few, pad with generic fallbacks
+    generic = _SUGGESTION_TEMPLATES["general"]
+    for g in generic:
+        if len(results) >= 4:
+            break
+        if g not in results:
+            results.append(g)
+
+    return results[:4]
 
 
 # --------------------------------------------------------------------------- #
@@ -151,7 +302,6 @@ async def classify_intent(state: JarvisState) -> dict[str, Any]:
         intent = raw if raw in valid else "general"
     except Exception:
         logger.warning("classify_intent LLM call failed; falling back to heuristic")
-        # Heuristic fallback so data queries still work when LLM quota is exhausted
         q_lower = query.lower()
         if any(w in q_lower for w in ("meeting", "calendar", "schedule", "agenda", "today", "week", "tomorrow")):
             intent = "calendar_query"
@@ -179,22 +329,21 @@ async def calendar_agent(state: JarvisState) -> dict[str, Any]:
         meetings = await provider.get_recent_meetings(days=7)
     except Exception:
         logger.exception("calendar_agent: provider call failed")
-        return {"agent_result": "I was unable to retrieve your calendar at this time."}
+        return {"agent_result": "I was unable to retrieve your calendar at this time.", "data_source": "none"}
 
     if not meetings:
-        return {"agent_result": "No meetings found in the past 14 days."}
+        return {"agent_result": "No meetings found in the past 14 days.", "data_source": "pg_database"}
 
     now_utc = datetime.now(timezone.utc)
     today_str = now_utc.strftime("%A, %d %B %Y")
     lines = [f"Meetings relative to today ({today_str}):"]
-    for m in meetings[:10]:  # cap at 10 for voice response
+    for m in meetings[:10]:
         date_str = str(m.get("meeting_date", ""))[:16]
         title = m.get("title", "(Untitled)")
         attendees_raw = m.get("attendees", [])
         if isinstance(attendees_raw, str):
-            import json as _json
             try:
-                attendees_raw = _json.loads(attendees_raw)
+                attendees_raw = json.loads(attendees_raw)
             except Exception:
                 attendees_raw = []
         names = ", ".join(a.get("name", "") for a in (attendees_raw or []) if isinstance(a, dict) and a.get("name"))
@@ -206,7 +355,7 @@ async def calendar_agent(state: JarvisState) -> dict[str, Any]:
             line += f". {summary[:120]}"
         lines.append(line)
 
-    return {"agent_result": "\n".join(lines)}
+    return {"agent_result": "\n".join(lines), "data_source": "pg_database"}
 
 
 async def action_items_agent(state: JarvisState) -> dict[str, Any]:
@@ -216,10 +365,10 @@ async def action_items_agent(state: JarvisState) -> dict[str, Any]:
         items = await provider.get_action_items()
     except Exception:
         logger.exception("action_items_agent: provider call failed")
-        return {"agent_result": "I was unable to retrieve your action items at this time."}
+        return {"agent_result": "I was unable to retrieve your action items at this time.", "data_source": "none"}
 
     if not items:
-        return {"agent_result": "You have no open action items right now."}
+        return {"agent_result": "You have no open action items right now.", "data_source": "pg_database"}
 
     lines = ["Your open action items:"]
     for item in items[:10]:
@@ -237,7 +386,7 @@ async def action_items_agent(state: JarvisState) -> dict[str, Any]:
             line += f" [from: {meeting}]"
         lines.append(line)
 
-    return {"agent_result": "\n".join(lines)}
+    return {"agent_result": "\n".join(lines), "data_source": "pg_database"}
 
 
 async def memory_agent(state: JarvisState) -> dict[str, Any]:
@@ -248,10 +397,10 @@ async def memory_agent(state: JarvisState) -> dict[str, Any]:
         chunks = await provider.semantic_search(query, limit=5)
     except Exception:
         logger.exception("memory_agent: provider call failed")
-        return {"agent_result": "I was unable to search the meeting memory at this time."}
+        return {"agent_result": "I was unable to search the meeting memory at this time.", "data_source": "none"}
 
     if not chunks:
-        return {"agent_result": f"No relevant meeting notes found for: '{query}'."}
+        return {"agent_result": f"No relevant meeting notes found for: '{query}'.", "data_source": "pg_database"}
 
     lines = [f"Relevant meeting notes for '{query}':"]
     for chunk in chunks:
@@ -261,7 +410,7 @@ async def memory_agent(state: JarvisState) -> dict[str, Any]:
         date_str = str(chunk.get("meeting_date", ""))[:10]
         lines.append(f"- [{meeting} | {date_str}] {speaker}: {content[:200]}")
 
-    return {"agent_result": "\n".join(lines)}
+    return {"agent_result": "\n".join(lines), "data_source": "pg_database"}
 
 
 async def general_agent(state: JarvisState) -> dict[str, Any]:
@@ -274,7 +423,8 @@ async def general_agent(state: JarvisState) -> dict[str, Any]:
             "agent_result": (
                 "I'm sorry, I cannot process your request right now because "
                 "the AI service is not configured. Please set GROQ_API_KEY or GOOGLE_API_KEY."
-            )
+            ),
+            "data_source": "none",
         }
 
     system = SystemMessage(
@@ -297,7 +447,7 @@ async def general_agent(state: JarvisState) -> dict[str, Any]:
             "those work directly from your database."
         )
 
-    return {"agent_result": result}
+    return {"agent_result": result, "data_source": "general"}
 
 
 async def compose_response(state: JarvisState) -> dict[str, Any]:
@@ -307,19 +457,31 @@ async def compose_response(state: JarvisState) -> dict[str, Any]:
     """
     agent_result = state.get("agent_result", "")
     query = state["query"]
+    data_source = state.get("data_source", "")
+    subject_person = state.get("subject_person", "")
     llm = _make_llm()
 
     if llm is None:
-        # Return agent_result verbatim if LLM is unavailable
         return {"final_response": agent_result}
 
     now_utc = datetime.now(timezone.utc)
     now_str = now_utc.strftime("%A, %d %B %Y, %H:%M UTC")
+
+    # Add transparency hint for agenda/fallback sources
+    source_hint = {
+        "live_calendar": "",
+        "pg_database": "",
+        "agenda_file": f"The response is based on {subject_person + chr(39) + 's' if subject_person else 'an'} agenda document. ",
+        "none": "",
+        "general": "",
+    }.get(data_source, "")
+
     system = SystemMessage(
         content=(
             "You are JARVIS, an AI voice assistant for a Mercedes-Benz CEO. "
             f"Current date and time: {now_str}. "
             "Use this to correctly interpret 'today', 'tomorrow', 'this week'. "
+            f"{source_hint}"
             "Convert the following data or answer into a natural, spoken English response. "
             "Be concise — 1 to 3 sentences. "
             "Do not use bullet points, markdown, or lists. "
@@ -338,11 +500,22 @@ async def compose_response(state: JarvisState) -> dict[str, Any]:
         final = response.content.strip()
     except Exception as exc:
         logger.warning("compose_response LLM call failed: %s; returning structured result", exc)
-        # Strip bullet-point lines into a readable sentence flow
         lines = [l.strip().lstrip('- ').strip() for l in agent_result.splitlines() if l.strip() and not l.startswith('#')]
-        final = ' '.join(lines[:6])  # first 6 data lines, joined as prose
+        final = ' '.join(lines[:6])
 
     return {"final_response": final}
+
+
+async def generate_suggestions(state: JarvisState) -> dict[str, Any]:
+    """Generate 3-4 contextual follow-up suggestions using template engine."""
+    intent = state.get("intent", "general")
+    query = state.get("query", "")
+    agent_result = state.get("agent_result", "")
+    session_context = state.get("session_context", [])
+
+    suggestions = _generate_suggestions_from_state(intent, query, agent_result, session_context)
+    logger.debug("generate_suggestions: intent=%s -> %s", intent, suggestions)
+    return {"suggestions": suggestions}
 
 
 # --------------------------------------------------------------------------- #
@@ -383,6 +556,7 @@ def build_graph() -> Any:
     builder.add_node("availability_agent", availability_agent)
     builder.add_node("email_agent", email_agent)
     builder.add_node("compose_response", compose_response)
+    builder.add_node("generate_suggestions", generate_suggestions)
 
     # Entry point
     builder.set_entry_point("classify_intent")
@@ -412,8 +586,9 @@ def build_graph() -> Any:
     ):
         builder.add_edge(agent_node, "compose_response")
 
-    # compose_response → END
-    builder.add_edge("compose_response", END)
+    # compose_response → generate_suggestions → END
+    builder.add_edge("compose_response", "generate_suggestions")
+    builder.add_edge("generate_suggestions", END)
 
     return builder.compile()
 
@@ -429,10 +604,10 @@ def init_graph() -> None:
     logger.info("LangGraph JARVIS supervisor compiled successfully")
 
 
-async def run_query(query: str) -> str:
+async def run_query(query: str, session_context: list[dict] | None = None) -> dict[str, Any]:
     """
     Entry point for the JARVIS supervisor.
-    Returns a spoken-English response string.
+    Returns dict with 'response' (str) and 'suggestions' (list[str]).
     """
     if _graph is None:
         raise RuntimeError("LangGraph has not been initialised. Call init_graph() first.")
@@ -443,14 +618,27 @@ async def run_query(query: str) -> str:
         "intent": "",
         "agent_result": "",
         "final_response": "",
+        "suggestions": [],
+        "data_source": "",
+        "subject_person": "",
+        "session_context": session_context or [],
     }
 
     try:
         result = await _graph.ainvoke(initial_state)
-        return result.get("final_response", "I'm sorry, I couldn't generate a response.")
+        return {
+            "response": result.get("final_response", "I'm sorry, I couldn't generate a response."),
+            "suggestions": result.get("suggestions", []),
+            "intent": result.get("intent", "general"),
+        }
     except Exception:
         logger.exception("run_query failed for query: %s", query[:80])
-        return (
-            "I encountered an unexpected error while processing your request. "
-            "Please try again."
-        )
+        return {
+            "response": (
+                "I encountered an unexpected error while processing your request. "
+                "Please try again."
+            ),
+            "suggestions": [],
+            "intent": "general",
+        }
+

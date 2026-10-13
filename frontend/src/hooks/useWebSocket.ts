@@ -10,6 +10,7 @@ export interface WSMessage {
   text?: string;
   response?: string;
   error?: string;
+  suggestions?: string[];
   [key: string]: unknown;
 }
 

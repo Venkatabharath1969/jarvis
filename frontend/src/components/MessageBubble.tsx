@@ -25,10 +25,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ role, text, timestamp }) 
         </View>
       )}
       <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
-        <Text style={[styles.text, isUser ? styles.textUser : styles.textAssistant]}>
-          {text}
-        </Text>
-        <Text style={styles.timestamp}>{timeStr}</Text>
+        {!isUser && <View style={styles.leftAccent} />}
+        <View style={styles.bubbleContent}>
+          <Text style={[styles.text, isUser ? styles.textUser : styles.textAssistant]}>
+            {text}
+          </Text>
+          <Text style={styles.timestamp}>{timeStr}</Text>
+        </View>
       </View>
       {isUser && (
         <View style={[styles.avatar, styles.avatarUser]}>
@@ -53,11 +56,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 2,
     backgroundColor: COLORS.surface,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
@@ -71,44 +74,55 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: FONTS.sizes.xs,
     fontWeight: FONTS.weights.bold,
-    color: COLORS.textPrimary,
+    color: COLORS.platinum,
+    letterSpacing: 0.5,
   },
   bubble: {
     maxWidth: SIZES.bubbleMaxWidth,
+    borderRadius: 2,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  bubbleContent: {
+    flex: 1,
     paddingHorizontal: SIZES.md,
     paddingVertical: SIZES.sm + 2,
-    borderRadius: SIZES.radiusLg,
+  },
+  leftAccent: {
+    width: 1.5,
+    backgroundColor: COLORS.gold,
+    opacity: 0.6,
   },
   bubbleUser: {
     backgroundColor: COLORS.userBubble,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: COLORS.userBubbleBorder,
-    borderBottomRightRadius: SIZES.radiusSm,
     marginLeft: SIZES.sm,
   },
   bubbleAssistant: {
     backgroundColor: COLORS.assistantBubble,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: COLORS.assistantBubbleBorder,
-    borderBottomLeftRadius: SIZES.radiusSm,
     marginLeft: SIZES.sm,
   },
   text: {
     fontSize: FONTS.sizes.base,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   textUser: {
-    color: COLORS.white,
+    color: COLORS.textPrimary,
     fontWeight: FONTS.weights.medium,
   },
   textAssistant: {
     color: COLORS.textPrimary,
+    fontWeight: FONTS.weights.regular,
   },
   timestamp: {
-    fontSize: FONTS.sizes.xs,
+    fontSize: FONTS.sizes.xs - 1,
     color: COLORS.textMuted,
     marginTop: 4,
     textAlign: 'right',
+    letterSpacing: 0.5,
   },
 });
 

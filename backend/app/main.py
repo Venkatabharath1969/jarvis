@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections import deque
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
@@ -9,16 +10,20 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from app.agents.supervisor import init_graph, run_query
+from app.agents.supervisor import init_graph, run_query, _load_people_cache
 from app.config import get_settings
 from app.db.pool import close_pool, create_pool
 from app.providers import init_provider, get_provider
+from app.routers.agenda import router as agenda_router
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Per-WebSocket session context (keyed by str(websocket.client), maxlen=5 turns)
+_sessions: dict[str, deque] = {}
 
 
 # --------------------------------------------------------------------------- #
@@ -28,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Startup: create DB pool, init provider, compile LangGraph."""
+    """Startup: create DB pool, init provider, compile LangGraph, load caches."""
     settings = get_settings()
     logger.info("JARVIS backend starting up (mock_mode=%s)", settings.USE_MOCK_DATA)
 
@@ -45,6 +50,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     init_provider(pool)  # type: ignore[arg-type]
     init_graph()
 
+    # Pre-load people names for fast entity extraction in suggestion engine
+    await _load_people_cache()
+
     logger.info("JARVIS backend ready")
     yield
 
@@ -60,11 +68,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="JARVIS Executive Assistant API",
     description="Voice AI backend for a Mercedes-Benz CEO prototype.",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-# Allow all origins for the prototype (tighten in production)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -72,6 +79,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(agenda_router)
 
 
 # --------------------------------------------------------------------------- #
@@ -98,6 +107,8 @@ async def health() -> dict[str, Any]:
         "llm_provider": llm_provider,
         "llm_model": llm_model,
         "llm_configured": llm_provider != "none",
+        "version": "2.0.0",
+        "features": ["suggestions", "agenda_fallback"],
     }
 
 
@@ -172,13 +183,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         {"type": "query", "text": "<user query string>"}
 
     Outbound message:
-        {"type": "response", "text": "<spoken-English answer>"}
+        {
+          "type": "response",
+          "text": "<spoken-English answer>",
+          "suggestions": ["<follow-up 1>", "<follow-up 2>", "<follow-up 3>"]
+        }
 
     Error message:
         {"type": "error", "text": "<error description>"}
     """
     await websocket.accept()
-    logger.info("WebSocket client connected: %s", websocket.client)
+    client_key = str(websocket.client)
+    _sessions[client_key] = deque(maxlen=5)
+    logger.info("WebSocket client connected: %s", client_key)
 
     try:
         while True:
@@ -192,6 +209,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
             msg_type = data.get("type", "")
             text = data.get("text", "").strip()
+
+            if msg_type == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
 
             if msg_type != "query" or not text:
                 await websocket.send_json(
@@ -208,8 +229,24 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             logger.info("WebSocket query: %s", text[:80])
 
             try:
-                answer = await run_query(text)
-                await websocket.send_json({"type": "response", "text": answer})
+                session_ctx = list(_sessions.get(client_key, []))
+                result = await run_query(text, session_context=session_ctx)
+                answer = result["response"]
+                suggestions = result.get("suggestions", [])
+                intent = result.get("intent", "general")
+
+                # Store turn in session context for next-turn entity resolution
+                _sessions[client_key].append({
+                    "query": text,
+                    "intent": intent,
+                    "response": answer[:200],
+                })
+
+                await websocket.send_json({
+                    "type": "response",
+                    "text": answer,
+                    "suggestions": suggestions,
+                })
             except Exception as exc:
                 logger.exception("run_query raised for WebSocket client")
                 await websocket.send_json(
@@ -223,6 +260,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 )
 
     except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected: %s", websocket.client)
+        logger.info("WebSocket client disconnected: %s", client_key)
     except Exception:
         logger.exception("Unexpected error in WebSocket handler")
+    finally:
+        _sessions.pop(client_key, None)
