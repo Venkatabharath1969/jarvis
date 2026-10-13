@@ -169,6 +169,13 @@ async def test_ui() -> FileResponse:
     return FileResponse(path=html_path, media_type="text/html")
 
 
+@app.get("/qa", tags=["System"], include_in_schema=False)
+async def qa_dashboard() -> FileResponse:
+    """Structured QA dashboard — automated test suite, REST inspector, agenda upload tester."""
+    html_path = os.path.join(os.path.dirname(__file__), "qa_dashboard.html")
+    return FileResponse(path=html_path, media_type="text/html")
+
+
 # --------------------------------------------------------------------------- #
 # WebSocket endpoint
 # --------------------------------------------------------------------------- #
